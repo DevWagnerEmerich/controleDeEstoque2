@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Packing List Dinâmico</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="container">
+        <div class="control-panel">
+            <h2>Gerador de Packing List</h2>
+            
+            <div class="accordion">
+                <button class="accordion-header"><h3>Dados Gerais</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group"><label for="invoiceNumber">Número do Invoice</label><input type="text" id="invoiceNumber" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="invoiceDate">Data</label><input type="date" id="invoiceDate" oninput="updatePreview()"></div>
+                </div>
+            </div>
+
+            <div class="accordion">
+                <button class="accordion-header"><h3>Partes Envolvidas</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group"><label for="importerInfo">Dados do Importador / Consignatário</label><textarea id="importerInfo" rows="5" oninput="updatePreview()"></textarea></div>
+                </div>
+            </div>
+            
+            <div class="accordion">
+                <button class="accordion-header"><h3>Dados da Remessa</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group"><label for="container">Container</label><input type="text" id="container" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="booking">Booking</label><input type="text" id="booking" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="paymentTerm">Termo de Pagamento</label><input type="text" id="paymentTerm" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="portOfDeparture">Porto de Partida</label><input type="text" id="portOfDeparture" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="destinationPort">Porto de Destino</label><input type="text" id="destinationPort" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="incoterm">Incoterm</label><input type="text" id="incoterm" oninput="updatePreview()"></div>
+                </div>
+            </div>
+
+            <div class="accordion">
+                <button class="accordion-header"><h3>Itens do Packing List (por Fornecedor)</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div id="supplier-list"></div>
+                    <button onclick="addSupplierGroup()" class="btn btn-secondary w-full mt-2"><i class="fas fa-plus mr-2"></i>Adicionar Grupo</button>
+                </div>
+            </div>
+
+            <div class="accordion">
+                <button class="accordion-header"><h3>Informações do Rodapé</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group">
+                        <label for="ptaxRate">PTAX / Cotação Dólar (USD para BRL)</label>
+                        <div class="flex items-center">
+                            <input type="number" id="ptaxRate" step="0.0001" class="input-field" oninput="updatePreview()">
+                            <button onclick="fetchExchangeRate()" class="btn btn-secondary ml-2" title="Atualizar Cotação">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group"><label for="countryOrigin">País de Origem</label><input type="text" id="countryOrigin" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="countryDestination">País de Destino Final</label><input type="text" id="countryDestination" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="ptaxInfo">Informações Adicionais (Contrato, etc.)</label><textarea id="ptaxInfo" rows="4" oninput="updatePreview()"></textarea></div>
+                    <div class="form-group"><label for="declarationText">Texto da Declaração</label><textarea id="declarationText" rows="2" oninput="updatePreview()"></textarea></div>
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <button class="btn btn-success w-full" onclick="printInvoice()"><i class="fas fa-print mr-2"></i>Imprimir / Salvar PDF</button>
+            </div>
+        </div>
+
+        <div class="preview-container">
+            <h2>Pré-visualização do Packing List</h2>
+            <div id="invoice-preview" class="border rounded-md p-1"></div>
+        </div>
+    </div>
+
+<script src="js/packing_list.js"></script>
+
+</body>
+</html>

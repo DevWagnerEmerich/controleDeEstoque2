@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Invoice Dinâmico</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Configuração do Tailwind CSS
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        primary: { DEFAULT: '#4f46e5', hover: '#4338ca', light: '#e0e7ff' },
+                        secondary: '#6b7280',
+                        success: { DEFAULT: '#22c55e', hover: '#16a34a' },
+                        warning: { DEFAULT: '#f97316', hover: '#ea580c' },
+                        danger: { DEFAULT: '#ef4444', hover: '#dc2626' },
+                        neutral: { light: '#f8fafc', DEFAULT: '#f1f5f9', dark: '#e2e8f0' }
+                    }
+                }
+            }
+        };
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="container">
+        <div class="control-panel">
+            <h2>Gerador de Invoice</h2>
+            
+            <div class="accordion">
+                <button class="accordion-header"><h3>Dados Gerais</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group"><label for="invoiceNumber">Número do Invoice</label><input type="text" id="invoiceNumber" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="invoiceDate">Data</label><input type="date" id="invoiceDate" oninput="updatePreview()"></div>
+                </div>
+            </div>
+
+            <div class="accordion">
+                <button class="accordion-header"><h3>Partes Envolvidas</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group"><label for="importerInfo">Dados do Importador / Consignatário</label><textarea id="importerInfo" rows="5" oninput="updatePreview()"></textarea></div>
+                </div>
+            </div>
+            
+            <div class="accordion">
+                <button class="accordion-header"><h3>Dados da Remessa</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group">
+                        <label for="ptaxRate">PTAX / Cotação Dólar (BRL por 1 USD)</label>
+                        <div class="flex items-center">
+                            <input type="number" id="ptaxRate" step="0.0001" class="input-field" oninput="updatePreview()">
+                            <button onclick="fetchExchangeRate()" class="btn btn-secondary ml-2" title="Atualizar Cotação">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                     <div class="form-group"><label for="booking">Booking</label><input type="text" id="booking" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="paymentTerm">Termo de Pagamento</label><input type="text" id="paymentTerm" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="portOfDeparture">Porto de Partida</label><input type="text" id="portOfDeparture" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="destinationPort">Porto de Destino</label><input type="text" id="destinationPort" oninput="updatePreview()"></div>
+                    <div class="form-group"><label for="incoterm">Incoterm</label><input type="text" id="incoterm" oninput="updatePreview()"></div>
+                </div>
+            </div>
+
+            <div class="accordion">
+                <button class="accordion-header"><h3>Itens do Invoice (por Fornecedor)</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div id="supplier-list"></div>
+                    <button onclick="addSupplierGroup()" class="btn btn-secondary w-full mt-2"><i class="fas fa-plus mr-2"></i>Adicionar Grupo</button>
+                </div>
+            </div>
+            
+            <div class="accordion">
+                <button class="accordion-header"><h3>Custos Adicionais</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div id="cost-list"></div>
+                    <button onclick="addCost()" class="btn btn-secondary w-full mt-2"><i class="fas fa-plus mr-2"></i>Adicionar Custo</button>
+                </div>
+            </div>
+
+            <div class="accordion">
+                <button class="accordion-header"><h3>Informações do Rodapé</h3><span class="accordion-icon"><i class="fas fa-chevron-right"></i></span></button>
+                <div class="accordion-content">
+                    <div class="form-group">
+                        <label for="footerInfo">Textos do Rodapé</label>
+                        <textarea id="footerInfo" rows="8" oninput="updatePreview()"></textarea>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <div class="form-group">
+                    <label for="pdf-upload" class="btn btn-primary w-full cursor-pointer">
+                        <i class="fas fa-file-pdf mr-2"></i> Importar de NF-e (PDF)
+                    </label>
+                    <input type="file" id="pdf-upload" class="hidden" accept=".pdf" onchange="handlePdfUpload(event)">
+                </div>
+                <button class="btn btn-success w-full" onclick="printInvoice()"><i class="fas fa-print mr-2"></i>Imprimir / Salvar PDF</button>
+            </div>
+        </div>
+
+        <div class="preview-container">
+            <h2>Pré-visualização do Invoice</h2>
+            <div id="invoice-preview" class="border rounded-md p-1"></div>
+        </div>
+    </div>
+
+    <div id="modal-backdrop-invoice" class="unit-modal-backdrop"></div>
+
+    <div id="unit-floating-window" class="unit-modal-container">
+        <div id="floating-window-header" class="unit-modal-header flex justify-between items-center cursor-move">
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-ruler-combined text-lg text-primary-DEFAULT"></i>
+                <h2 class="text-lg font-bold text-gray-800">Confirmar Unidades de Medida</h2>
+            </div>
+            <button onclick="closeUnitModal()" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+        </div>
+        
+        <div class="unit-modal-body">
+            <p class="text-base text-gray-600 mb-4">Para maior precisão, por favor, confirme a unidade de medida de cada item extraído do PDF.</p>
+            <div id="modal-product-list" class="space-y-3 p-4 bg-gray-50 rounded-lg border">
+                </div>
+        </div>
+
+        <div class="unit-modal-footer">
+            <button onclick="closeUnitModal()" class="btn btn-secondary">Cancelar</button>
+            <button id="confirm-units-btn" class="btn btn-success">Confirmar e Continuar</button>
+        </div>
+    </div>
+
+<script src="js/invoice.js"></script>
+
+</body>
+</html>

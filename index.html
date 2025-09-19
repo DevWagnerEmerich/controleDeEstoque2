@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <meta name="theme-color" content="#4f46e5">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="https://placehold.co/192x192/4f46e5/ffffff?text=Pro">
+
+    <title>StockControl Pro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Configuração do Tailwind CSS
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        primary: { DEFAULT: '#4f46e5', hover: '#4338ca', light: '#e0e7ff' },
+                        secondary: '#6b7280',
+                        success: { DEFAULT: '#22c55e', hover: '#16a34a' },
+                        warning: { DEFAULT: '#f97316', hover: '#ea580c' },
+                        danger: { DEFAULT: '#ef4444', hover: '#dc2626' },
+                        neutral: { light: '#f8fafc', DEFAULT: '#f1f5f9', dark: '#e2e8f0' }
+                    }
+                }
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+
+    <link rel="stylesheet" href="css/style.css">
+    <script type="module" src="js/main.js"></script>
+</head>
+<body class="antialiased bg-gray-50">
+
+    <div id="login-screen" class="fixed inset-0 bg-gray-100 z-[100] flex items-center justify-center p-4">
+        <div class="w-full max-w-sm">
+            <div class="bg-white p-8 rounded-xl shadow-lg text-center">
+                <div class="flex items-center justify-center space-x-3 mb-6">
+                    <i class="fas fa-boxes-stacked text-primary-DEFAULT text-3xl"></i>
+                    <h1 class="text-2xl font-bold text-gray-800">StockControl Pro</h1>
+                </div>
+                <h2 class="text-xl font-semibold text-gray-700 mb-2">Aceder ao Sistema</h2>
+                <p class="text-sm text-gray-500 mb-6">Por favor, insira as suas credenciais.</p>
+                <form id="login-form" class="space-y-4">
+                    <div>
+                        <input type="text" id="username" placeholder="Utilizador" class="input-field text-center" required>
+                    </div>
+                    <div>
+                        <input type="password" id="password" placeholder="Palavra-passe" class="input-field text-center" required>
+                    </div>
+                    <p id="login-error" class="text-red-500 text-sm h-4"></p>
+                    <button type="submit" class="btn btn-primary w-full">Entrar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div id="app-container" class="hidden">
+        
+        <aside id="sidebar" class="fixed top-0 left-0 h-screen w-64 bg-gray-800 text-white z-50 transform -translate-x-full transition-transform duration-300 ease-in-out">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-boxes-stacked text-primary-light text-2xl"></i>
+                    <h1 class="text-xl font-bold text-white">StockControl Pro</h1>
+                </div>
+                <button id="sidebar-close-btn" class="md:hidden text-gray-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <nav class="mt-4">
+                <ul>
+                    <li>
+                        <button id="add-item-btn-sidebar" class="w-full flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
+                            <i class="fas fa-plus-circle fa-fw mr-3"></i>
+                            <span>Adicionar Item</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button id="operation-btn-sidebar" class="w-full flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
+                            <i class="fas fa-dolly fa-fw mr-3"></i>
+                            <span>Criar Operação</span>
+                        </button>
+                    </li>
+                     <li>
+                        <button id="suppliers-btn-sidebar" class="w-full flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
+                            <i class="fas fa-truck fa-fw mr-3"></i>
+                            <span>Fornecedores</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button id="reports-btn-sidebar" class="w-full flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
+                            <i class="fas fa-chart-pie fa-fw mr-3"></i>
+                            <span>Relatórios</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button id="manage-users-btn-sidebar" class="w-full flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
+                            <i class="fas fa-users-cog fa-fw mr-3"></i>
+                            <span>Gerir Utilizadores</span>
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden md:hidden"></div>
+
+        <div id="main-content" class="transition-all duration-300 ease-in-out">
+
+            <header class="bg-white sticky top-0 z-30 border-b border-gray-200">
+                <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex items-center justify-between h-16">
+                        <div class="flex items-center">
+                             <button id="sidebar-open-btn" class="text-gray-600 mr-4">
+                                 <i class="fas fa-bars text-xl"></i>
+                             </button>
+                             <div class="flex items-center space-x-3">
+                                <i class="fas fa-boxes-stacked text-primary-DEFAULT text-2xl"></i>
+                                <h1 class="text-xl font-bold text-gray-800">StockControl Pro</h1>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center space-x-4">
+                            <span class="text-sm text-gray-600 hidden sm:inline">Olá, <span id="current-username-desktop" class="font-bold"></span>!</span>
+                            <button id="logout-btn" class="btn btn-danger">
+                                <i class="fas fa-sign-out-alt sm:mr-2"></i>
+                                <span class="hidden sm:inline">Sair</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <main class="container mx-auto p-4 md:p-6 lg:p-8 pb-24 md:pb-8">
+                <section id="dashboard-stats" class="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
+                </section>
+
+                <div class="bg-white p-4 rounded-lg border border-gray-200 mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        <div class="md:col-span-6">
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                                    <i class="fas fa-search text-gray-400"></i>
+                                </span>
+                                <input type="text" id="searchInput" class="input-field pl-10" placeholder="Procurar por nome ou código...">
+                            </div>
+                        </div>
+                        <div class="md:col-span-3 grid grid-cols-2 gap-4">
+                            <select id="sortSelect" class="input-field">
+                                <option value="name-asc">Ordenar A-Z</option>
+                                <option value="name-desc">Ordenar Z-A</option>
+                                <option value="qty-asc">Qtd. Crescente</option>
+                                <option value="qty-desc">Qtd. Decrescente</option>
+                            </select>
+                            <select id="filterSelect" class="input-field">
+                                <option value="all">Todos os estados</option>
+                                <option value="ok">OK</option>
+                                <option value="low">Baixo</option>
+                                <option value="critical">Crítico</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-3">
+                             <button id="import-btn" class="btn btn-secondary w-full">
+                                <i class="fas fa-file-import mr-2"></i> Importar Itens
+                             </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="items-cards-container" class="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden"></div>
+                <div id="items-table-container" class="hidden md:block bg-white rounded-lg border border-gray-200 overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead>
+                            <tr>
+                                <th class="table-header-cell">Item</th>
+                                <th class="table-header-cell">Código</th>
+                                <th class="table-header-cell">Stock</th>
+                                <th class="table-header-cell">Estado</th>
+                                <th class="table-header-cell">Preço Venda</th>
+                                <th class="table-header-cell text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="items-table-body" class="bg-white divide-y divide-gray-200"></tbody>
+                    </table>
+                </div>
+                <div id="empty-state" class="hidden text-center py-16 bg-white rounded-lg border border-gray-200">
+                    <i class="fas fa-box-open text-5xl text-gray-300 mb-4"></i>
+                    <h3 class="text-xl font-semibold text-gray-700">Nenhum item encontrado</h3>
+                    <p class="text-secondary">Adicione um novo item para começar a gerir o seu stock.</p>
+                </div>
+            </main>
+
+            <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-dark shadow-lg z-40">
+                <div id="mobile-nav-bar" class="flex justify-around">
+                    <button id="operation-btn-mobile" class="flex flex-col items-center justify-center p-2 text-success w-1/4">
+                        <i class="fas fa-dolly text-2xl"></i><span class="text-xs mt-1">Operação</span>
+                    </button>
+                    <button id="add-item-btn-mobile" class="flex flex-col items-center justify-center p-2 text-primary-DEFAULT w-1/4">
+                        <i class="fas fa-plus-circle text-2xl"></i><span class="text-xs mt-1">Adicionar</span>
+                    </button>
+                    <button id="suppliers-btn-mobile" class="flex flex-col items-center justify-center p-2 text-secondary w-1/4">
+                        <i class="fas fa-truck text-2xl"></i><span class="text-xs mt-1">Fornecedores</span>
+                    </button>
+                    <button id="reports-btn-mobile" class="flex flex-col items-center justify-center p-2 text-secondary w-1/4">
+                        <i class="fas fa-chart-pie text-2xl"></i><span class="text-xs mt-1">Relatórios</span>
+                    </button>
+                     <button id="manage-users-btn-mobile" class="flex flex-col items-center justify-center p-2 text-secondary w-1/4">
+                        <i class="fas fa-users-cog text-2xl"></i><span class="text-xs mt-1">Utilizadores</span>
+                    </button>
+                </div>
+            </nav>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="fixed inset-0 z-[60] hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md modal-content">
+            <div class="p-6 text-center">
+                <i class="fas fa-exclamation-triangle text-5xl text-warning-DEFAULT mx-auto mb-4"></i>
+                <h3 id="confirm-modal-title" class="text-lg font-semibold text-gray-800">Tem a certeza?</h3>
+                <p id="confirm-modal-text" class="mt-2 text-sm text-gray-600">Esta ação não pode ser desfeita.</p>
+            </div>
+            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse rounded-b-lg">
+                <button id="confirm-modal-btn" type="button" class="btn btn-danger w-full sm:ml-3 sm:w-auto">
+                    Confirmar
+                </button>
+                <button id="confirm-modal-cancel-btn" type="button" class="btn btn-secondary mt-3 w-full sm:mt-0 sm:w-auto">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="users-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-content">
+            <div class="p-4 sm:p-6 border-b flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-gray-800">Gerir Utilizadores</h2>
+                <button type="button" class="text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+            </div>
+            <div class="flex-grow flex flex-col md:flex-row overflow-hidden">
+                <div id="users-list" class="w-full md:w-1/3 p-4 border-b md:border-b-0 md:border-r overflow-y-auto">
+                </div>
+                <div class="w-full md:w-2/3 p-4 sm:p-6 overflow-y-auto">
+                     <form id="user-form" class="space-y-4">
+                        <input type="hidden" id="userId">
+                        <h3 id="user-form-title" class="text-lg font-semibold text-gray-800">Adicionar Novo Utilizador</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="formUsername" class="block text-sm font-medium text-gray-700">Nome de Utilizador</label>
+                                <input type="text" id="formUsername" required class="input-field mt-1">
+                            </div>
+                            <div>
+                                <label for="formPassword" class="block text-sm font-medium text-gray-700">Palavra-passe</label>
+                                <input type="password" id="formPassword" class="input-field mt-1" placeholder="Deixe em branco para não alterar">
+                            </div>
+                        </div>
+                        <div id="permissions-wrapper">
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">Permissões</h4>
+                            <div id="permissions-container" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                <label class="flex items-center space-x-3"><input type="checkbox" id="perm-add" class="h-4 w-4 text-primary-DEFAULT border-gray-300 rounded"><span>Adicionar Itens</span></label>
+                                <label class="flex items-center space-x-3"><input type="checkbox" id="perm-edit" class="h-4 w-4 text-primary-DEFAULT border-gray-300 rounded"><span>Editar Itens</span></label>
+                                <label class="flex items-center space-x-3"><input type="checkbox" id="perm-delete" class="h-4 w-4 text-primary-DEFAULT border-gray-300 rounded"><span>Excluir Itens</span></label>
+                                <label class="flex items-center space-x-3"><input type="checkbox" id="perm-import" class="h-4 w-4 text-primary-DEFAULT border-gray-300 rounded"><span>Importar Itens</span></label>
+                                <label class="flex items-center space-x-3"><input type="checkbox" id="perm-operation" class="h-4 w-4 text-primary-DEFAULT border-gray-300 rounded"><span>Criar Operações</span></label>
+                                <label class="flex items-center space-x-3"><input type="checkbox" id="perm-reports" class="h-4 w-4 text-primary-DEFAULT border-gray-300 rounded"><span>Ver Relatórios</span></label>
+                            </div>
+                        </div>
+                        <div class="flex justify-end space-x-3 pt-4 border-t">
+                            <button type="button" id="reset-user-form-btn" class="btn btn-secondary">Limpar</button>
+                            <button type="submit" class="btn btn-primary">Guardar Utilizador</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="item-details-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col modal-content">
+            <div class="p-4 sm:p-6 border-b flex justify-between items-start">
+                <div>
+                    <h2 id="details-item-name" class="text-2xl font-bold text-gray-800">Nome do Item</h2>
+                    <p id="details-item-name-en" class="text-sm text-secondary">English Name</p>
+                </div>
+                <button type="button" class="text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+            </div>
+            <div class="p-4 sm:p-6 overflow-y-auto flex-grow">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1">
+                        <img id="details-item-image" src="https://placehold.co/300x300/e0e7ff/4f46e5?text=Item" class="rounded-lg w-full h-auto object-cover" alt="Imagem do item">
+                        <div class="mt-4 space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-secondary font-medium">Preço de Custo:</span>
+                                <span id="details-item-cost" class="font-bold text-gray-800">R$ 0,00</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-secondary font-medium">Preço de Venda:</span>
+                                <span id="details-item-sale" class="font-bold text-gray-800">R$ 0,00</span>
+                            </div>
+                             <div class="flex justify-between text-sm">
+                                <span class="text-secondary font-medium">Margem de Lucro:</span>
+                                <span id="details-item-margin" class="font-bold text-success-DEFAULT">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="md:col-span-2 space-y-4">
+                        <div>
+                            <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Descrição</h4>
+                            <p id="details-item-description" class="mt-1 text-gray-700">Descrição completa do item.</p>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t">
+                            <div>
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider" id="details-package-type-label">Total de Caixas</h4>
+                                <p id="details-item-boxes" class="text-2xl font-bold text-gray-800">0</p>
+                            </div>
+                            <div class="hidden">
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Total de Unidades</h4>
+                                <p id="details-item-quantity" class="text-2xl font-bold text-primary-DEFAULT">0</p>
+                            </div>
+                             <div>
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Stock Mínimo</h4>
+                                <p id="details-item-min-quantity" class="text-2xl font-bold text-warning-DEFAULT">0</p>
+                            </div>
+                            <div class="md:col-span-3">
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider" id="details-total-weight-label">Peso Total em Stock</h4>
+                                <p id="details-item-total-weight" class="text-2xl font-bold text-gray-800">0 kg</p>
+                                <p id="details-item-total-weight-calc" class="text-xs text-gray-500 hidden"></p>
+                            </div>
+                        </div>
+                         <div>
+                            <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Fornecedor</h4>
+                            <p id="details-item-supplier" class="mt-1 text-gray-700">Nome do Fornecedor</p>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t">
+                             <div>
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Código (SKU)</h4>
+                                <p id="details-item-code" class="mt-1 text-gray-700">N/A</p>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider">NCM</h4>
+                                <p id="details-item-ncm" class="mt-1 text-gray-700">N/A</p>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider" id="details-units-per-package-label">Unid./Caixa</h4>
+                                <p id="details-item-units-box" class="mt-1 text-gray-700">0</p>
+                            </div>
+                             <div>
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider" id="details-measure-per-unit-label">Peso/Unid.</h4>
+                                <p id="details-item-weight-unit" class="mt-1 text-gray-700">0 kg</p>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Última Atualização</h4>
+                                <p id="details-item-updated" class="mt-1 text-gray-700">dd/mm/aaaa</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 pt-4 border-t">
+                    <h3 class="font-semibold mb-2 text-gray-700">Últimas 3 Movimentações</h3>
+                    <div id="details-item-movements" class="space-y-2">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="item-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto modal-content">
+            <form id="item-form" class="p-4 sm:p-6 space-y-4">
+                <div class="flex justify-between items-center pb-4 border-b border-gray-200">
+                    <h2 id="item-modal-title" class="text-2xl font-bold text-gray-800">Adicionar Novo Item</h2>
+                    <button type="button" class="text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+                </div>
+                <input type="hidden" id="itemId">
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Imagem</label>
+                        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+                            <div class="space-y-1 text-center">
+                                <img id="imagePreview" src="#" alt="Pré-visualização" class="hidden mx-auto h-24 w-24 object-cover rounded-md">
+                                <div id="imagePlaceholder">
+                                    <i class="fas fa-image text-4xl text-gray-300 mx-auto"></i>
+                                    <p class="text-xs text-gray-500">JPG, PNG, GIF</p>
+                                </div>
+                                <div class="flex text-sm text-gray-600">
+                                    <label for="itemImageInput" class="relative cursor-pointer bg-white rounded-md font-medium text-primary-DEFAULT hover:text-primary-hover focus-within:outline-none">
+                                        <span>Carregar ficheiro</span>
+                                        <input id="itemImageInput" name="itemImage" type="file" class="sr-only" accept="image/*">
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="md:col-span-2 space-y-4">
+                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="itemName" class="block text-sm font-medium text-gray-700">Nome do Item (PT)</label>
+                                <input type="text" id="itemName" required class="input-field mt-1">
+                            </div>
+                            <div>
+                                <label for="itemNameEn" class="block text-sm font-medium text-gray-700">Nome do Item (EN)</label>
+                                <input type="text" id="itemNameEn" class="input-field mt-1">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="itemCode" class="block text-sm font-medium text-gray-700">Código/SKU</label>
+                                <input type="text" id="itemCode" class="input-field mt-1">
+                            </div>
+                            <div>
+                                <label for="itemNcm" class="block text-sm font-medium text-gray-700">NCM</label>
+                                <input type="text" id="itemNcm" class="input-field mt-1" maxlength="10">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="itemDescription" class="block text-sm font-medium text-gray-700">Descrição</label>
+                    <textarea id="itemDescription" rows="3" class="input-field mt-1"></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="itemSupplier" class="block text-sm font-medium text-gray-700">Fornecedor</label>
+                        <select id="itemSupplier" class="input-field mt-1"></select>
+                    </div>
+                    <div>
+                        <label for="packageType" class="block text-sm font-medium text-gray-700">Tipo de Embalagem</label>
+                        <select id="packageType" class="input-field mt-1">
+                            <option value="caixa">Caixa</option>
+                            <option value="fardo">Fardo</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="unitsPerPackage" class="block text-sm font-medium text-gray-700">Unidades por Embalagem</label>
+                        <input type="number" id="unitsPerPackage" min="1" required class="input-field mt-1">
+                    </div>
+                </div>
+
+                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Medida por Unidade</label>
+                        <div class="flex items-center mt-1">
+                            <input type="number" id="unitMeasureValue" min="0" step="any" class="input-field rounded-r-none">
+                            <select id="unitMeasureType" class="input-field rounded-l-none border-l-0 w-24">
+                                <option value="g">g</option>
+                                <option value="kg">kg</option>
+                                <option value="ml">ml</option>
+                                <option value="L">L</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <label for="quantityInBoxes" class="block text-sm font-medium text-gray-700">Qtd. de Embalagens</label>
+                        <input type="number" id="quantityInBoxes" min="0" required class="input-field mt-1">
+                    </div>
+                    <div>
+                        <label for="itemMinQuantity" class="block text-sm font-medium text-gray-700">Qtd. Mínima (Unidades)</label>
+                        <input type="number" id="itemMinQuantity" min="0" required class="input-field mt-1">
+                    </div>
+                    <div>
+                        <label for="itemCostPrice" class="block text-sm font-medium text-gray-700">Preço Custo (Unitário)</label>
+                        <input type="number" id="itemCostPrice" min="0" step="0.01" required class="input-field mt-1">
+                    </div>
+                    <div>
+                        <label for="itemSalePrice" class="block text-sm font-medium text-gray-700">Preço Venda (Unitário)</label>
+                        <input type="number" id="itemSalePrice" min="0" step="0.01" required class="input-field mt-1">
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button type="button" class="btn btn-secondary closeModalBtn">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="suppliers-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col modal-content">
+            <div class="p-4 sm:p-6 border-b flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-gray-800">Gerir Fornecedores</h2>
+                <button type="button" class="text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+            </div>
+            <div class="flex-grow flex flex-col md:flex-row overflow-hidden">
+                <div id="suppliers-list" class="w-full md:w-1/3 p-4 border-b md:border-b-0 md:border-r overflow-y-auto">
+                </div>
+                <div class="w-full md:w-2/3 p-4 sm:p-6 overflow-y-auto">
+                     <form id="supplier-form" class="space-y-4">
+                        <input type="hidden" id="supplierId">
+                        <h3 id="supplier-form-title" class="text-lg font-semibold text-gray-800">Adicionar Novo Fornecedor</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="supplierName" class="block text-sm font-medium text-gray-700">Nome do Fornecedor</label>
+                                <input type="text" id="supplierName" required class="input-field mt-1">
+                            </div>
+                            <div>
+                                <label for="supplierCnpj" class="block text-sm font-medium text-gray-700">NIF</label>
+                                <input type="text" id="supplierCnpj" class="input-field mt-1" maxlength="18">
+                            </div>
+                        </div>
+                         <div>
+                            <label for="supplierAddress" class="block text-sm font-medium text-gray-700">Morada</label>
+                            <input type="text" id="supplierAddress" class="input-field mt-1">
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="supplierFda" class="block text-sm font-medium text-gray-700">Registo FDA</label>
+                                <input type="text" id="supplierFda" class="input-field mt-1">
+                            </div>
+                             <div>
+                                <label for="supplierEmail" class="block text-sm font-medium text-gray-700">E-mail</label>
+                                <input type="email" id="supplierEmail" class="input-field mt-1">
+                            </div>
+                        </div>
+                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="supplierSalesperson" class="block text-sm font-medium text-gray-700">Nome do Vendedor</label>
+                                <input type="text" id="supplierSalesperson" class="input-field mt-1">
+                            </div>
+                             <div>
+                                <label for="supplierPhone" class="block text-sm font-medium text-gray-700">Telefone</label>
+                                <input type="tel" id="supplierPhone" class="input-field mt-1" maxlength="15">
+                            </div>
+                        </div>
+                        <div class="flex justify-end space-x-3 pt-4 border-t">
+                            <button type="button" id="reset-supplier-form-btn" class="btn btn-secondary">Limpar</button>
+                            <button type="submit" class="btn btn-primary">Guardar Fornecedor</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="reports-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-content">
+             <div class="p-4 sm:p-6 border-b flex flex-col sm:flex-row sm:justify-between sm:items-center">
+                <div class="flex justify-between items-center w-full">
+                    <h2 class="text-2xl font-bold text-gray-800">Relatórios e Histórico</h2>
+                    <button type="button" class="sm:hidden text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+                </div>
+                 <button type="button" class="hidden sm:block text-gray-400 hover:text-gray-600 text-2xl ml-4 closeModalBtn">&times;</button>
+            </div>
+            <div class="border-b border-gray-200">
+                <nav id="reports-tab-nav" class="flex -mb-px px-4 sm:px-6">
+                    <button data-tab="overview" class="report-tab active">Visão Geral</button>
+                    <button data-tab="products" class="report-tab">Produtos</button>
+                    <button data-tab="history" class="report-tab">Histórico</button>
+                </nav>
+            </div>
+            <div class="p-4 sm:p-6 overflow-y-auto flex-grow">
+                <div id="tab-overview" class="report-tab-content active">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h3 class="font-semibold mb-2 text-gray-700">Valor do Stock (Custo)</h3>
+                            <div class="h-64"><canvas id="valueChart"></canvas></div>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold mb-2 text-gray-700">Estado do Stock</h3>
+                            <div class="h-64"><canvas id="statusChart"></canvas></div>
+                        </div>
+                    </div>
+                     <div class="mt-8">
+                        <h3 class="font-semibold mb-2 text-gray-700">Movimentações Recentes</h3>
+                        <div id="reports-movements-history" class="space-y-2 max-h-64 overflow-y-auto"></div>
+                    </div>
+                </div>
+                <div id="tab-products" class="report-tab-content">
+                    <div class="flex justify-end mb-4">
+                        <select id="reports-period-filter" class="input-field w-auto">
+                            <option value="7">Últimos 7 dias</option>
+                            <option value="30" selected>Últimos 30 dias</option>
+                            <option value="90">Últimos 90 dias</option>
+                            <option value="all">Todo o período</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                            <h3 class="font-semibold mb-4 text-gray-700 flex items-center"><i class="fas fa-chart-bar mr-2 text-primary-DEFAULT"></i>Itens Mais Vendidos</h3>
+                            <div id="top-selling-items" class="space-y-4"></div>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                            <h3 class="font-semibold mb-4 text-gray-700 flex items-center"><i class="fas fa-sort-amount-down mr-2 text-warning-DEFAULT"></i>Itens Menos Vendidos</h3>
+                            <div id="least-selling-items" class="space-y-4"></div>
+                        </div>
+                    </div>
+                </div>
+                 <div id="tab-history" class="report-tab-content">
+                    <h3 class="font-semibold text-lg mb-4">Histórico de Operações de Saída</h3>
+                    <div id="operations-history-list" class="space-y-3">
+                        </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="stock-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md modal-content">
+            <form id="stock-form" class="p-4 sm:p-6 space-y-4">
+                <div class="flex justify-between items-center pb-4 border-b border-gray-200">
+                    <h2 id="stock-modal-title" class="text-2xl font-bold text-gray-800">Movimentar Stock</h2>
+                    <button type="button" class="text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+                </div>
+                <input type="hidden" id="stockItemId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Tipo de Movimento</label>
+                    <input type="text" id="movementType" readonly class="input-field mt-1 bg-gray-100" value="Entrada (Ajuste Manual)">
+                </div>
+                <div>
+                    <label for="movementQuantity" id="movement-quantity-label" class="block text-sm font-medium text-gray-700">Quantidade a Adicionar</label>
+                    <input type="number" id="movementQuantity" min="1" required class="input-field mt-1">
+                </div>
+                 <div>
+                    <label for="movementReason" class="block text-sm font-medium text-gray-700">Motivo/Observação</label>
+                    <input type="text" id="movementReason" class="input-field mt-1" placeholder="Ex: Contagem de inventário, devolução">
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button type="button" class="btn btn-secondary closeModalBtn">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Confirmar Entrada</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="operation-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col modal-content">
+            <div class="p-4 sm:p-6 border-b flex justify-between items-center">
+                <div>
+                    <h2 id="operation-modal-title" class="text-2xl font-bold text-gray-800">Nova Operação de Saída</h2>
+                    <p id="operation-id" class="text-sm text-secondary"></p>
+                </div>
+                <button type="button" class="text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+            </div>
+            <div class="flex-grow flex flex-col md:flex-row overflow-hidden">
+                <div class="w-full md:w-1/2 p-4 border-b md:border-b-0 md:border-r overflow-y-auto">
+                    <h3 class="font-semibold text-lg mb-4">Produtos Disponíveis</h3>
+                    <div id="operation-available-items" class="space-y-3">
+                        </div>
+                </div>
+                <div class="w-full md:w-2/3 p-4 flex flex-col overflow-y-auto">
+                    <h3 class="font-semibold text-lg mb-4">Itens na Operação</h3>
+                    <div id="operation-selected-items" class="flex-grow space-y-3">
+                        </div>
+                    <div id="operation-summary" class="pt-4 mt-4 border-t space-y-2 text-sm">
+                        </div>
+                    <div class="pt-4 mt-4 border-t grid grid-cols-2 gap-3">
+                        <button id="finalize-invoice-btn" class="btn btn-success w-full">
+                            <i class="fas fa-file-invoice-dollar mr-2"></i>Finalizar e Gerar Invoice
+                        </button>
+                        <button id="finalize-packlist-btn" class="btn btn-primary w-full">
+                            <i class="fas fa-box-open mr-2"></i>Finalizar e Gerar Packlist
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="import-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-content">
+            <div class="p-4 sm:p-6 border-b flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-gray-800">Importar Novos Itens</h2>
+                <button type="button" class="text-gray-400 hover:text-gray-600 text-2xl closeModalBtn">&times;</button>
+            </div>
+            <div class="flex-grow p-6 space-y-6 overflow-y-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="p-4 border rounded-lg">
+                        <h3 class="font-semibold text-lg mb-2"><i class="fas fa-file-excel text-green-500 mr-2"></i>Importar via Folha de Cálculo (XLSX)</h3>
+                        <p class="text-sm text-secondary mb-4">Use o nosso modelo para garantir que todos os dados são importados corretamente.</p>
+                        <button id="download-template-btn" class="btn btn-secondary w-full mb-2"><i class="fas fa-download mr-2"></i>Baixar Modelo de Folha de Cálculo</button>
+                        <label for="xlsx-importer" class="btn btn-primary w-full cursor-pointer">
+                            <i class="fas fa-upload mr-2"></i> Escolher Ficheiro .xlsx
+                        </label>
+                        <input type="file" id="xlsx-importer" class="hidden" accept=".xlsx, .xls">
+                    </div>
+                    <div class="p-4 border rounded-lg bg-gray-50">
+                        <h3 class="font-semibold text-lg mb-2"><i class="fas fa-file-pdf text-red-500 mr-2"></i>Importar via PDF (NFe)</h3>
+                        <p class="text-sm text-secondary mb-4">Funcionalidade para importar produtos diretamente de uma Fatura Eletrónica em PDF.</p>
+                        <label for="pdf-importer-modal" class="btn btn-secondary w-full cursor-pointer">
+                           <i class="fas fa-upload mr-2"></i> Escolher Ficheiro .pdf
+                        </label>
+                        <input type="file" id="pdf-importer-modal" class="hidden" accept=".pdf">
+                    </div>
+                </div>
+                <div id="import-preview-container" class="hidden">
+                    <h3 class="font-semibold text-lg mb-2">Pré-visualização dos Itens</h3>
+                    <div class="max-h-64 overflow-y-auto border rounded-lg">
+                        <table class="min-w-full text-sm">
+                            <thead class="bg-gray-100 sticky top-0">
+                                <tr id="import-preview-header"></tr>
+                            </thead>
+                            <tbody id="import-preview-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex justify-end mt-4">
+                        <button id="confirm-import-btn" class="btn btn-success">Confirmar Importação</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification-container" class="fixed bottom-24 md:bottom-5 right-5 z-50 space-y-3"></div>
+
+</body>
+</html>

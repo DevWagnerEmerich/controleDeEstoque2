@@ -1,0 +1,21 @@
+{
+  "name": "StockControl Pro",
+  "short_name": "StockPro",
+  "description": "Um aplicativo moderno para controle de estoque.",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "https://placehold.co/192x192/4f46e5/ffffff?text=Pro",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://placehold.co/512x512/4f46e5/ffffff?text=Pro",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
