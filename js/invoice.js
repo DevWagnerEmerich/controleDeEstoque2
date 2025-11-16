@@ -1,55 +1,149 @@
-let currentProducts = []; // Global variable to hold products from PDF
+let nfeData = {}; // Global variable to hold the entire NFe data object
+let allItems = []; // Holds the main stock items for NCM lookup
 
-async function fetchExchangeRate() {
-    console.log("Fetching exchange rate...");
-    const button = document.querySelector('button[onclick="fetchExchangeRate()"] i');
-    button.classList.add('fa-spin');
-    try {
-        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-        if (!response.ok) throw new Error('A resposta da rede não foi bem-sucedida');
-        const data = await response.json();
-        const rate = data.rates.BRL;
-        if (rate) {
-            document.getElementById('ptaxRate').value = rate.toFixed(4);
-            updatePreview();
-        }
-    } catch (error) {
-        console.error('Falha ao obter a cotação do dólar automaticamente. Por favor, insira manualmente.');
-    } finally {
-        button.classList.remove('fa-spin');
+let invoiceData = {}; // Global variable to hold all invoice data
+
+function parseBrazilianNumber(str) {
+    if (typeof str !== 'string') {
+        if (typeof str === 'number') return str;
+        return 0;
     }
+    str = str.trim();
+    if (!str) return 0;
+    // Remove thousands separators (dots) and replace decimal comma with dot
+    const numberStr = str.replace(/\./g, '').replace(/,/g, '.');
+    const parsed = parseFloat(numberStr);
+    return isNaN(parsed) ? 0 : parsed;
 }
+
+function parseQtyUnit(qtyUnitString) {
+    if (!qtyUnitString) return 0;
+
+    const upperCaseString = qtyUnitString.toUpperCase();
+    const parts = upperCaseString.split('X');
+    if (parts.length !== 2) return 0;
+
+    const quantity = parseFloat(parts[0]);
+    const unitPart = parts[1];
+
+    const valueMatch = unitPart.match(/^[0-9.]+/);
+    const unitValue = valueMatch ? parseFloat(valueMatch[0]) : 0;
+
+    const unitTypeMatch = unitPart.match(/[A-Z]+$/);
+    const unitType = unitTypeMatch ? unitTypeMatch[0] : '';
+
+    if (isNaN(quantity) || isNaN(unitValue)) return 0;
+
+    let totalWeight = quantity * unitValue;
+
+    switch (unitType) {
+        case 'G':
+        case 'GR':
+            totalWeight /= 1000; // Convert grams to kilograms
+            break;
+        case 'ML':
+            totalWeight /= 1000; // Convert milliliters to liters (assuming 1ml=1g)
+            break;
+        case 'L':
+        case 'KG':
+            // Already in the base unit
+            break;
+        default:
+            // Assume the value is already in the desired unit if no type is specified
+            break;
+    }
+
+    return totalWeight;
+}
+
+
 
 function updatePreview() {
     console.log("Updating preview...");
     const preview = document.getElementById('invoice-preview');
     
-    const invoiceNumber = document.getElementById('invoiceNumber').value;
-    const invoiceDate = document.getElementById('invoiceDate').value;
-    const importerInfo = document.getElementById('importerInfo').value;
-    const booking = document.getElementById('booking').value;
-    const paymentTerm = document.getElementById('paymentTerm').value;
-    const portOfDeparture = document.getElementById('portOfDeparture').value;
-    const destinationPort = document.getElementById('destinationPort').value;
-    const incoterm = document.getElementById('incoterm').value;
-    let footerInfo = document.getElementById('footerInfo').value;
-    const ptaxRate = parseFloat(document.getElementById('ptaxRate').value) || 1; // Evita divisão por zero
-    
+    const {
+        invoiceNumber,
+        invoiceDate,
+        importerInfo,
+        exporterInfo,
+        booking,
+        paymentTerm,
+        portOfDeparture,
+        destinationPort,
+        incoterm,
+        footerInfo,
+        ptaxRate,
+        suppliers,
+        costs,
+        manualNetWeight,
+        manualGrossWeight,
+        distribution
+    } = invoiceData;
+
+    let distributedSuppliers = JSON.parse(JSON.stringify(suppliers));
+
+    if (distribution && distribution.active) {
+        const { value, type } = distribution;
+
+        let totalBRL = 0;
+        distributedSuppliers.forEach(supplier => {
+            supplier.items.forEach(item => {
+                const priceBRL = parseFloat(item.price) || 0;
+                const qty = parseFloat(item.qty) || 0;
+                totalBRL += priceBRL * qty;
+            });
+        });
+
+        if (totalBRL > 0) {
+            let amountToAddBRL = (type === 'percentage') ? totalBRL * (value / 100) : value;
+
+            distributedSuppliers.forEach(supplier => {
+                supplier.items.forEach(item => {
+                    const priceBRL = parseFloat(item.price) || 0;
+                    const qty = parseFloat(item.qty) || 0;
+                    const currentItemTotalBRL = priceBRL * qty;
+                    
+                    const proportion = (totalBRL > 0) ? currentItemTotalBRL / totalBRL : 0;
+                    const itemAmountToAdd = amountToAddBRL * proportion;
+                    const newItemTotalBRL = currentItemTotalBRL + itemAmountToAdd;
+
+                    if (qty > 0) {
+                        const newPricePerUnit = newItemTotalBRL / qty;
+                        item.price = newPricePerUnit.toFixed(4);
+                    } else {
+                        item.price = '0.00';
+                    }
+                });
+            });
+        }
+    }
+
     const alibrasLogoUrl = 'images/alibras-logo.png';
     const secondaryLogoUrl = 'images/loia-logo.png';
     
-    const ptaxLine = `PTAX : ${ptaxRate.toFixed(4)} USD`;
-    if (footerInfo.match(/PTAX/i)) {
-        footerInfo = footerInfo.replace(/PTAX.*(?:\n|$)/i, ptaxLine + '\n');
-    } else {
-        footerInfo += `\n${ptaxLine}`;
-    }
-    const formattedFooterInfo = footerInfo
+    let formattedFooterInfo = footerInfo
         .replace(/(Bank Information :)/g, '<b>$1</b>')
         .replace(/(Credit To :)/g, '<b>$1</b>')
         .replace(/(Payment Term :)/g, '<b>$1</b>')
-        .replace(/(PTAX :)/g, '<b>$1</b>')
         .replace(/\n/g, '<br>');
+
+    if (ptaxRate && ptaxRate > 0) {
+        const ptaxLine = `PTAX: ${ptaxRate.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} USD`;
+        let newFooterInfo = footerInfo;
+        if (newFooterInfo.match(/PTAX/i)) {
+            newFooterInfo = newFooterInfo.replace(/PTAX.*(?:\n|$)/i, ptaxLine + '\n');
+        } else {
+            newFooterInfo += `\n${ptaxLine}`;
+        }
+        formattedFooterInfo = newFooterInfo
+            .replace(/(Bank Information :)/g, '<b>$1</b>')
+            .replace(/(Credit To :)/g, '<b>$1</b>')
+            .replace(/(Payment Term :)/g, '<b>$1</b>')
+            .replace(/(PTAX :)/g, '<b>$1</b>')
+            .replace(/\n/g, '<br>');
+    }
+
 
     let formattedDate = '';
     if (invoiceDate) {
@@ -62,18 +156,33 @@ function updatePreview() {
     let totalPackages = 0;
     let netWeight = 0;
 
-    document.querySelectorAll('#supplier-list .supplier-group').forEach(group => {
-        group.querySelectorAll('.item-list .item').forEach(item => {
-            const qty = parseFloat(item.querySelector('[name=qty]').value) || 0;
-            const ncm = item.querySelector('[name=ncm]').value;
-            const desc = item.querySelector('[name=desc]').value;
-            const qty_unit = item.querySelector('[name=qty_unit]').value;
-            const qty_kg = parseFloat(item.querySelector('[name=qty_kg]').value) || 0;
-            const um = item.querySelector('[name=um]').value;
-            const priceBRL = parseFloat(item.querySelector('[name=price]').value) || 0;
+    const isValidRate = ptaxRate && ptaxRate > 0;
+
+    distributedSuppliers.forEach((supplier, groupIndex) => {
+        supplier.items.forEach((item, itemIndex) => {
+            const qty = parseFloat(item.qty) || 0;
+            const ncm = item.ncm;
+            const descPt = item.desc;
+            const descEn = item.nameEn;
+            let descriptionHtml = ''; // Initialize as empty for the main field
+            if (descEn) {
+                descriptionHtml = descEn;
+                if (descPt) { // Only add Portuguese if it exists
+                    descriptionHtml += `<br><small style="color: #555;">${descPt}</small>`;
+                }
+            } else if (descPt) { // If no English name, but Portuguese exists, display Portuguese as secondary
+                descriptionHtml = `<br><small style="color: #555;">${descPt}</small>`;
+            }
+
+            const qty_unit = item.qty_unit;
+            const qty_kg = parseFloat(item.qty_kg) || 0;
+
+
+            const um = item.um;
+            const priceBRL = parseFloat(item.price) || 0;
             
-            const priceUSD = priceBRL / ptaxRate;
-            const totalUSD = (item.dataset.totalPriceBRL / ptaxRate) || (qty_kg * priceUSD);
+            const priceUSD = isValidRate ? priceBRL / ptaxRate : priceBRL;
+            const totalUSD = qty_kg * priceUSD;
 
             productSubtotalUSD += totalUSD;
             totalPackages += qty;
@@ -85,23 +194,23 @@ function updatePreview() {
 
             itemsAndSuppliersHTML += `
                 <tr>
-                    <td class="text-center">${qty.toLocaleString('en-US')}</td>
-                    <td class="text-center">${ncm}</td>
-                    <td>${desc}</td>
-                    <td>${qty_unit}</td>
+                    <td class="text-center editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.qty">${qty.toLocaleString('en-US')}</td>
+                    <td class="text-center editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.ncm">${ncm}</td>
+                    <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.desc">${descriptionHtml}</td>
+                    <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.qty_unit">${qty_unit}</td>
                     <td class="text-center">${formattedQtyKg}</td>
-                    <td>${um}</td>
-                    <td class="text-right">$${formattedPriceUSD}</td>
-                    <td class="text-center bold">$${formattedTotalUSD}</td>
+                    <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.um">${um}</td>
+                    <td class="text-right editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.price">${formattedPriceUSD}</td>
+                    <td class="text-center bold">${formattedTotalUSD}</td>
                 </tr>
             `;
         });
         
-        const supplierInfo = group.querySelector('[name=supplier_info]').value;
+        const supplierInfo = supplier.info;
         if (supplierInfo) {
             itemsAndSuppliersHTML += `
                 <tr>
-                    <td colspan="8" class="supplier-info-cell">${supplierInfo.replace(/\n/g, '<br>')}</td>
+                    <td colspan="8" class="supplier-info-cell editable-field" data-target-id="suppliers.${groupIndex}.info">${supplierInfo.replace(/\n/g, '<br>')}</td>
                 </tr>
             `;
         }
@@ -114,46 +223,46 @@ function updatePreview() {
     
     let costsHTML = '';
     let costsSubtotalUSD = 0;
-    document.querySelectorAll('#cost-list .item').forEach(item => {
-        const desc = item.querySelector('[name=cost_desc]').value;
-        const valueBRL = parseFloat(item.querySelector('[name=cost_value]').value) || 0;
-        const valueUSD = valueBRL / ptaxRate;
-        costsSubtotalUSD += valueUSD;
-        costsHTML += `
-            <tr>
-                <td colspan="7" class="text-right bold">${desc}</td>
-                <td class="text-center bold">$${valueUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            </tr>
-        `;
-    });
-    
+            costs.forEach((cost, costIndex) => {
+                const desc = cost.desc;
+                const valueBRL = parseFloat(cost.value) || 0;
+                const valueUSD = isValidRate ? valueBRL / ptaxRate : valueBRL;
+                costsSubtotalUSD += valueUSD;
+                costsHTML += `
+                    <tr>
+                        <td colspan="7" class="text-right bold editable-field" data-target-id="costs.${costIndex}.desc">${desc}</td>
+                        <td class="text-center bold editable-field" data-target-id="costs.${costIndex}.value">${valueUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>
+                `;
+            });    
     const grandTotalUSD = productSubtotalUSD + costsSubtotalUSD;
-    const grossWeight = netWeight > 0 ? netWeight * 1.035 : 0;
+
+    let finalNetWeight = nfeData.notaFiscal?.pesoLiquido > 0 ? nfeData.notaFiscal.pesoLiquido : netWeight;
+    let finalGrossWeight = nfeData.notaFiscal?.pesoBruto > 0 ? nfeData.notaFiscal.pesoBruto : finalNetWeight * 1.035;
+
+    if (!isNaN(manualNetWeight) && manualNetWeight > 0) {
+        finalNetWeight = manualNetWeight;
+    }
+    if (!isNaN(manualGrossWeight) && manualGrossWeight > 0) {
+        finalGrossWeight = manualGrossWeight;
+    }
 
     preview.innerHTML = `
         <table cellspacing="0" border="0">
             <colgroup>
-                <col width="5%"><col width="10%"><col width="47%"><col width="9%"><col width="8%"><col width="5%"><col width="8%"><col width="8%">
+                <col width="8%"><col width="10%"><col width="44%"><col width="9%"><col width="8%"><col width="5%"><col width="8%"><col width="8%">
             </colgroup>
             <tbody>
                 <tr>
                     <td colspan="3" rowspan="9" height="180" class="logo-cell text-center">
                         <img src="${alibrasLogoUrl}" alt="Alibras Logo" style="max-width: 250px; max-height: 120px; object-fit: contain;">
                     </td>
-                    <td colspan="5" rowspan="9" style="vertical-align: top; padding: 6px; line-height: 1.4;">
-                        <b class="bold">ALIBRAS ALIMENTOS BRASIL</b><br>
-                        Av:Washington Luiz,585,Ap101,
-                        Centro - Dom Cavati - MG - 35148-000 - Brasil<br>
-                        CNPJ: 18.629.179/0001-06<br>
-                        <b>Contact :</b> Bruna da Silva Rodrigues<br>
-                        <b>Phone :</b> + 55 33 999093304<br>
-                        <b>DUNS #</b> G43527752<br>
-                        <b>FDA #</b> 16606877688<br>
-                        <a href="mailto:alibrasexportimport@gmail.com" style="color: #000; text-decoration: none;"><b>E-MAIL:</b> alibrasexportimport@gmail.com</a>
+                    <td colspan="5" rowspan="9" style="vertical-align: top; padding: 6px; line-height: 1.4;" class="editable-field" data-target-id="exporterInfo">
+                        ${exporterInfo.replace(/\n/g, '<br>')}
                     </td>
                 </tr>
                 <tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
-                <tr><td colspan="8" class="text-center bold">INVOICE ${invoiceNumber}</td></tr>
+                <tr><td colspan="8" class="text-center bold editable-field">INVOICE ${invoiceNumber}</td></tr>
                 <tr>
                     <td colspan="3" class="header-bg bold">IMPORTER&nbsp;</td>
                     <td colspan="5" class="header-bg bold">INVOICE DETAILS</td>
@@ -161,43 +270,44 @@ function updatePreview() {
                 <tr>
                     <td colspan="3" rowspan="7" class="italic" style="vertical-align: center; padding: 6px;">
                         <div style="display: flex; align-items: center; height: 100%;">
-                            <div style="white-space: pre-wrap; width: 60%; flex-shrink: 0;">${importerInfo.replace(/\n/g, '<br>')}</div>
+                        <div class="editable-field" data-target-id="importerInfo" style="white-space: pre-wrap; width: 60%; flex-shrink: 0;">${importerInfo.replace(/\n/g, '<br>')}</div>
                             <div style="width: 40%; text-align: center;">
                                 <img src="${secondaryLogoUrl}" alt="Secondary Logo" style="max-width: 190px; max-height: 120px; object-fit: contain;">
                             </div>
                         </div>
                     </td>
                     <td colspan="5" rowspan="7" class="bold" style="vertical-align: top; padding: 6px; line-height: 1.6;">
-                        <u>INVOICE&nbsp;NUMBER:&nbsp;</u> ${invoiceNumber}<br>
-                        <u>DATE:&nbsp;</u> ${formattedDate}<br>
-                        <u>PAYMENT&nbsp;TERM:&nbsp;</u> ${paymentTerm}<br>
-                        <u>&nbsp;PORT&nbsp;OF&nbsp;DEPARTURE&nbsp;:&nbsp;</u> ${portOfDeparture}<br>
-                        <u>DESTINATION&nbsp;AIR&nbsp;PORT&nbsp;:&nbsp;</u> ${destinationPort}<br>
-                        <u>INCOTERM :</u> ${incoterm}<br>
-                        <u>BOOKING:&nbsp;</u> ${booking}
+                        <u>INVOICE&nbsp;NUMBER:&nbsp;</u> <span class="editable-field" data-target-id="invoiceNumber">${invoiceNumber}</span><br>
+                        <u>DATE:&nbsp;</u> <span class="editable-field" data-target-id="invoiceDate">${formattedDate}</span><br>
+                        <u>PAYMENT&nbsp;TERM:&nbsp;</u> <span class="editable-field" data-target-id="paymentTerm">${paymentTerm}</span><br>
+                        <u>&nbsp;PORT&nbsp;OF&nbsp;DEPARTURE&nbsp;:&nbsp;</u> <span class="editable-field" data-target-id="portOfDeparture">${portOfDeparture}</span><br>
+                        <u>DESTINATION&nbsp;AIR&nbsp;PORT&nbsp;:&nbsp;</u> <span class="editable-field" data-target-id="destinationPort">${destinationPort}</span><br>
+                        <u>INCOTERM :</u> <span class="editable-field" data-target-id="incoterm">${incoterm}</span><br>
+                        <u>BOOKING:&nbsp;</u> <span class="editable-field" data-target-id="booking">${booking}</span>
                     </td>
                 </tr>
                 <tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
                 <tr class="header-bg bold">
-                    <td class="text-center">QNT</td><td class="text-center">NCM</td><td class="text-center">DESCRIPTION</td><td class="text-center">QTY UNIT</td><td class="text-center">QTY KG</td><td class="text-center">U/M</td><td class="text-right">UNIT $</td><td class="text-center">$ USD</td>
+                    <td class="text-center">QNT</td><td class="text-center">NCM</td><td class="text-center">DESCRIPTION</td><td class="text-center">QTY UNIT</td><td class="text-center">QTY KG</td><td class="text-center">U/M</td>
+                    <td class="text-right">UNIT ${isValidRate ? '$' : 'R$'}</td>
+                    <td class="text-center">${isValidRate ? '$ USD' : 'R$'}</td>
                 </tr>
                 ${itemsAndSuppliersHTML}
                 ${costsHTML}
                 <tr>
                     <td colspan="7" class="text-right bold">TOTAL</td>
-                    <td class="text-center bold">$${grandTotalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center bold">${grandTotalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 </tr>
                 <tr>
-                    <td colspan="5" rowspan="5" style="vertical-align: top; line-height: 1.5;">${formattedFooterInfo}</td>
-                    <td colspan="3" rowspan="5" style="vertical-align: top; padding: 6px; line-height: 1.6;">
-                        Total of Package: ${totalPackages.toLocaleString('en-US')}<br>
-                        Gross Weight: ${grossWeight.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}kg<br>
-                        Net Weight: ${netWeight.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}kg<br>
-                        Country of Origin : Brazil<br>
-                        Destination : USA
+                    <td colspan="5" class="editable-field" data-target-id="footerInfo" style="vertical-align: top; line-height: 1.5;">${formattedFooterInfo}</td>
+                    <td colspan="3" style="vertical-align: top; padding: 6px; line-height: 1.6;">
+                        Total of Package: <span class="editable-field" data-target-id="totalPackages">${totalPackages.toLocaleString('en-US')}</span><br>
+                        Gross Weight: <span class="editable-field" data-target-id="manualGrossWeight">${finalGrossWeight.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>kg<br>
+                        Net Weight: <span class="editable-field" data-target-id="manualNetWeight">${finalNetWeight.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>kg<br>
+                        Country of Origin : <span class="editable-field" data-target-id="countryOrigin">Brazil</span><br>
+                        Destination : <span class="editable-field" data-target-id="countryDestination">USA</span>
                     </td>
                 </tr>
-                <tr></tr><tr></tr><tr></tr><tr></tr>
                 <tr><td colspan="8" class="no-border" style="height: 20px;">&nbsp;</td></tr>
                 <tr><td colspan="8" class="text-center no-border">_________________________</td></tr>
                 <tr><td colspan="8" class="text-center no-border bold">Exporter's Signature</td></tr>
@@ -206,403 +316,602 @@ function updatePreview() {
     `;
 }
 
-function addSupplierGroup() {
-    console.log("Adding supplier group...");
-    const list = document.getElementById('supplier-list');
-    const group = document.createElement('div');
-    group.className = 'supplier-group';
-    const groupCount = list.children.length + 1;
-    group.innerHTML = `
-        <div class="group-header">
-            <h3 class="font-semibold text-slate-700">Grupo de Fornecedor #${groupCount}</h3>
-            <button class="btn-icon-danger" onclick="this.parentElement.parentElement.remove(); updatePreview();"><i class="fas fa-trash-alt"></i></button>
-        </div>
-        <div class="form-group">
-            <label>Informações do Fornecedor (FDA, Endereço, etc.)</label>
-            <textarea name="supplier_info" rows="2" oninput="updatePreview()"></textarea>
-        </div>
-        <div class="item-list space-y-3"></div>
-        <button onclick="addItem(this)" class="btn btn-secondary w-full mt-2 btn-sm"><i class="fas fa-plus mr-2"></i>Adicionar Produto</button>
-    `;
-    list.appendChild(group);
-    
-    const content = list.parentElement;
-    if (content.classList.contains('expanded')) {
-        content.style.maxHeight = content.scrollHeight + "px";
-    }
-    group.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function addItem(button) {
-    console.log("Adding item...");
-    const itemList = button.previousElementSibling;
-    const item = document.createElement('div');
-    item.className = 'item';
-    item.innerHTML = `
-        <div class="item-header">
-            <span class="font-semibold text-slate-600">Produto</span>
-            <button class="btn-icon-danger" onclick="this.parentElement.parentElement.remove(); updatePreview();"><i class="fas fa-times"></i></button>
-        </div>
-        <div class="form-group"><label>Quantidade</label><input type="number" name="qty" value="1" min="0" oninput="updatePreview()"></div>
-        <div class="form-group"><label>NCM</label><input type="text" name="ncm" oninput="this.value = this.value.replace(/[^0-9]/g, ''); updatePreview();"></div>
-        <div class="form-group"><label>Descrição</label><input type="text" name="desc" oninput="updatePreview()"></div>
-        <div class="form-group"><label>Unidade Qtd.</label><input type="text" name="qty_unit" oninput="updatePreview()"></div>
-        <div class="form-group"><label>Peso (KG)</label><input type="number" name="qty_kg" value="0.00" step="0.01" min="0" oninput="updatePreview()"></div>
-        <div class="form-group"><label>U/M</label><input type="text" name="um" value="CS" oninput="updatePreview()"></div>
-        <div class="form-group"><label>Preço Unitário R$</label><input type="number" name="price" value="0.00" step="0.01" min="0" oninput="updatePreview()"></div>
-    `;
-    itemList.appendChild(item);
-
-    const content = itemList.closest('.accordion-content');
-    if (content && content.classList.contains('expanded')) {
-        content.style.maxHeight = content.scrollHeight + "px";
-    }
-    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
 function addCost() {
-    console.log("Adding cost...");
-    const list = document.getElementById('cost-list');
-    const item = document.createElement('div');
-    item.className = 'item';
-    item.innerHTML = `
-        <div class="item-header">
-            <span class="font-semibold text-slate-600">Custo Adicional</span>
-            <button class="btn-icon-danger" onclick="this.parentElement.parentElement.remove(); updatePreview();"><i class="fas fa-times"></i></button>
-        </div>
-        <div class="form-group"><label>Descrição do Custo</label><input type="text" name="cost_desc" oninput="updatePreview()"></div>
-        <div class="form-group"><label>Valor R$</label><input type="number" name="cost_value" value="0.00" step="0.01" min="0" oninput="updatePreview()"></div>
-    `;
-    list.appendChild(item);
+    const costNameInput = document.getElementById('costName');
+    const costValueInput = document.getElementById('costValue');
 
-    const content = list.parentElement;
-    if (content.classList.contains('expanded')) {
-        content.style.maxHeight = content.scrollHeight + "px";
+    const name = costNameInput.value.trim();
+    const value = parseBrazilianNumber(costValueInput.value);
+
+    if (!name || isNaN(value) || value <= 0) {
+        showNotification('Por favor, insira um nome e um valor válido para o custo.', 'danger');
+        return;
     }
-    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    invoiceData.costs.push({ desc: name, value: value });
+
+    costNameInput.value = '';
+    costValueInput.value = '';
+
+    updatePreview();
 }
 
 function printInvoice() {
     window.print();
 }
 
-function populateWithOperationData(data) {
-    console.log("Populating with operation data:", data);
-    const { operation, allSuppliers } = data;
-    
-    document.getElementById('supplier-list').innerHTML = '';
-    document.getElementById('cost-list').innerHTML = '';
 
-    document.getElementById('invoiceNumber').value = operation.id.replace('OP-', '');
-    document.getElementById('invoiceDate').value = new Date(operation.date).toISOString().split('T')[0];
-    
-    document.getElementById('importerInfo').value = 'Loia Foods Import Export & Export LLC\n63-65 Gotthardt Street\nNewark, NJ , 07105 USA\nEmail: operations@loiafood.com\nCONSIGNER: 27 Malvern st. Newark, NJ 07105';
-    document.getElementById('booking').value = '255641399';
-    document.getElementById('paymentTerm').value = 'Due on receipt - US DOLLAR';
-    document.getElementById('portOfDeparture').value = 'SANTOS ( SP)';
-    document.getElementById('destinationPort').value = 'NY / NJ';
-    document.getElementById('incoterm').value = 'FOB';
-    document.getElementById('footerInfo').value = 'Bank Information : Sent in document attached to the email where this proforma was also attached\nCredit To : Alibras Alimentos Brasil - CNPJ: 18.629.179/0001-06\nPayment Term : 100% advance - US Dollar\n\nI declare all the information contained in this invoice to be true and correct';
 
-    const itemsBySupplier = operation.items.reduce((acc, item) => {
-        const supplierId = item.supplierId || 'unknown';
-        if (!acc[supplierId]) acc[supplierId] = [];
-        acc[supplierId].push(item);
-        return acc;
-    }, {});
+function saveChanges() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const origin = urlParams.get('origin');
 
-    for (const supplierId in itemsBySupplier) {
-        addSupplierGroup();
-        const groups = document.querySelectorAll('#supplier-list .supplier-group');
-        const currentGroup = groups[groups.length - 1];
-        const supplier = allSuppliers.find(s => s.id === supplierId);
-        
-        if (supplier) {
-            currentGroup.querySelector('[name=supplier_info]').value = `FDA#${supplier.fda || ''} - ${supplier.name}`;
+    // --- NEW LOGIC: Check if origin is simulation and update sessionStorage ---
+    if (origin === 'simulation') {
+        const simDataString = sessionStorage.getItem('simulationReturnData');
+        if (simDataString) {
+            const simulationData = JSON.parse(simDataString);
+            
+            // Flatten the updated items from the invoice
+            const updatedInvoiceItems = invoiceData.suppliers.flatMap(s => s.items);
+
+            // Update items in the simulation data
+            simulationData.items.forEach(simItem => {
+                const updatedItem = updatedInvoiceItems.find(invItem => invItem.id === simItem.id);
+                if (updatedItem) {
+                    // The key property to update is 'operationQuantity' in the simulation
+                    simItem.operationQuantity = parseBrazilianNumber(updatedItem.qty.toString());
+                    // Also update the price, as it might have been edited
+                    simItem.operationPrice = parseBrazilianNumber(updatedItem.price.toString());
+                }
+            });
+
+            // Save the modified simulation data back to sessionStorage
+            sessionStorage.setItem('simulationReturnData', JSON.stringify(simulationData));
+            showNotification('Quantidades da simulação atualizadas!', 'info');
         }
-
-        const addButton = currentGroup.querySelector('button[onclick="addItem(this)"]');
-        itemsBySupplier[supplierId].forEach(item => {
-            addItem(addButton);
-            const itemForms = currentGroup.querySelectorAll('.item');
-            const currentItemForm = itemForms[itemForms.length - 1];
-            
-            const boxes = Math.floor(item.operationQuantity / (item.unitsPerPackage || 1));
-            currentItemForm.querySelector('[name=qty]').value = boxes;
-            currentItemForm.querySelector('[name=ncm]').value = item.ncm;
-            currentItemForm.querySelector('[name=desc]').value = item.nameEn || item.name;
-            currentItemForm.querySelector('[name=qty_unit]').value = `${item.unitsPerPackage || 1}x${item.unitMeasureValue}${item.unitMeasureType}`;
-            
-            let itemNetWeight = item.operationQuantity * (item.unitMeasureValue || 0);
-            if (item.unitMeasureType === 'g' || item.unitMeasureType === 'ml') {
-                itemNetWeight /= 1000;
-            }
-            currentItemForm.querySelector('[name=qty_kg]').value = itemNetWeight.toFixed(2);
-            currentItemForm.querySelector('[name=price]').value = item.operationPrice.toFixed(2);
-        });
     }
-}
+    // --- END NEW LOGIC ---
 
-// Lógica da Janela Flutuante (Floating Window)
-function makeDraggable(element) {
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    const header = document.getElementById("floating-window-header");
-
-    if (header) {
-        header.onmousedown = dragMouseDown;
-    }
-
-    function dragMouseDown(e) {
-        e = e || window.event;
-        e.preventDefault();
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        document.onmouseup = closeDragElement;
-        document.onmousemove = elementDrag;
-    }
-
-    function elementDrag(e) {
-        e = e || window.event;
-        e.preventDefault();
-        pos1 = pos3 - e.clientX;
-        pos2 = pos4 - e.clientY;
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        element.style.top = (element.offsetTop - pos2) + "px";
-        element.style.left = (element.offsetLeft - pos1) + "px";
-    }
-
-    function closeDragElement() {
-        document.onmouseup = null;
-        document.onmousemove = null;
-    }
-}
-
-
-function initialize() {
-    console.log("Initializing...");
-    makeDraggable(document.getElementById('unit-floating-window')); // Ativa o arraste na janela
-    const invoiceDataString = sessionStorage.getItem('invoiceData');
-    
-    if (invoiceDataString) {
-        const invoiceData = JSON.parse(invoiceDataString);
-        populateWithOperationData(invoiceData);
-        sessionStorage.removeItem('invoiceData');
-    } else {
-        document.getElementById('invoiceNumber').value = '2060';
-        document.getElementById('invoiceDate').value = new Date().toISOString().split('T')[0];
-        document.getElementById('importerInfo').value = 'Loia Foods Import Export & Export LLC\n63-65 Gotthardt Street\nNewark, NJ , 07105 USA\nEmail: operations@loiafood.com\nCONSIGNER: 27 Malvern st. Newark, NJ 07105';
-        document.getElementById('booking').value = '255641399';
-        document.getElementById('paymentTerm').value = 'Due on receipt - US DOLLAR';
-        document.getElementById('portOfDeparture').value = 'SANTOS ( SP)';
-        document.getElementById('destinationPort').value = 'NY / NJ';
-        document.getElementById('incoterm').value = 'FOB';
-        document.getElementById('footerInfo').value = 'Bank Information : Sent in document attached to the email where this proforma was also attached\nCredit To : Alibras Alimentos Brasil - CNPJ: 18.629.179/0001-06\nPayment Term : 100% advance - US Dollar\n\nI declare all the information contained in this invoice to be true and correct';
-        addSupplierGroup();
-        const group1 = document.querySelector('#supplier-list .supplier-group:nth-child(1)');
-        group1.querySelector('[name=supplier_info]').value = 'FDA#17405485860-RIVELLI E BEZERRA INDUSTRIA E COMERCIO DE ALIMENTOS LTDA';
-        
-        const addButton1 = group1.querySelector('button[onclick="addItem(this)"]');
-        addItem(addButton1);
-        let p1 = group1.querySelector('.item:nth-child(1)');
-        p1.querySelector('[name=qty]').value = 30;
-        p1.querySelector('[name=ncm]').value = '20052000';
-        p1.querySelector('[name=desc]').value = 'Loia-Potato Chips (PALHA) 10X800Gr';
-        p1.querySelector('[name=qty_unit]').value = '10X800G';
-        p1.querySelector('[name=qty_kg]').value = 240;
-        p1.querySelector('[name=price]').value = 38.68;
-        
-        addItem(addButton1);
-        let p2 = group1.querySelector('.item:nth-child(2)');
-        p2.querySelector('[name=qty]').value = 70;
-        p2.querySelector('[name=ncm]').value = '20052000';
-        p2.querySelector('[name=desc]').value = 'Loia-Potato Chips (PALHA) 20X300Gr';
-        p2.querySelector('[name=qty_unit]').value = '20X300G';
-        p2.querySelector('[name=qty_kg]').value = 420;
-        p2.querySelector('[name=price]').value = 29.50;
-
-        addCost();
-        let c1 = document.querySelector('#cost-list .item');
-        c1.querySelector('[name=cost_desc]').value = 'EXPRESSO RADIANTE +13 Pallets';
-        c1.querySelector('[name=cost_value]').value = 2596.68;
-    }
-
-    document.querySelectorAll('.accordion-header').forEach(button => {
-        button.addEventListener('click', () => {
-            const content = button.nextElementSibling;
-            button.classList.toggle('active');
-            content.classList.toggle('expanded');
-            
-            if (content.style.maxHeight) {
-                content.style.maxHeight = null;
-            } else {
-                content.style.maxHeight = content.scrollHeight + 32 + "px";
-            } 
-        });
-    });
-
-    fetchExchangeRate();
-}
-
-async function handlePdfUpload(event) {
-    console.log("handlePdfUpload: Function started.");
-    const file = event.target.files[0];
-    if (!file) {
-        console.log("handlePdfUpload: No file selected.");
+    const documentDataString = localStorage.getItem('currentDocument');
+    if (!documentDataString) {
+        showNotification("Erro: Dados da operação não encontrados para salvar.", "danger");
         return;
     }
 
-    const formData = new FormData();
-    formData.append('file', file);
+    const documentData = JSON.parse(documentDataString);
 
-    const preview = document.getElementById('invoice-preview');
-    const originalContent = preview.innerHTML;
-    preview.innerHTML = `<div class="text-center p-8"><i class="fas fa-spinner fa-spin fa-3x"></i><p class="mt-4">Processando PDF...</p></div>`;
+    // Reconstruct the operation object from the global invoiceData, preserving the original ID
+    const updatedOperation = {
+        ...documentData.operation, // Keeps original id and other properties
+        invoiceNumber: invoiceData.invoiceNumber,
+        invoiceDate: invoiceData.invoiceDate,
+        exporterInfo: invoiceData.exporterInfo, // <-- ADD THIS LINE
+        importerInfo: invoiceData.importerInfo,
+        booking: invoiceData.booking,
+        paymentTerm: invoiceData.paymentTerm,
+        portOfDeparture: invoiceData.portOfDeparture,
+        destinationPort: invoiceData.destinationPort,
+        incoterm: invoiceData.incoterm,
+        footerInfo: invoiceData.footerInfo,
+        ptaxRate: invoiceData.ptaxRate,
+        costs: invoiceData.costs,
+        manualNetWeight: invoiceData.manualNetWeight,
+        manualGrossWeight: invoiceData.manualGrossWeight,
+        distribution: invoiceData.distribution,
+        suppliers: invoiceData.suppliers
+    };
+    
+    updatedOperation.items = invoiceData.suppliers.flatMap(s => s.items);
 
-    try {
-        console.log("handlePdfUpload: Sending fetch request...");
-        const response = await fetch('http://127.0.0.1:8000/extract-pdf-data/', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'Authorization': 'secret' // Chave de API definida no backend
+    const newDocumentData = {
+        ...documentData,
+        operation: updatedOperation
+    };
+
+    // 1. Save the current document view for immediate reload consistency
+    localStorage.setItem('currentDocument', JSON.stringify(newDocumentData));
+
+    // 2. Directly update the correct localStorage key based on origin
+    if (origin === 'purchase-orders') {
+        const pendingPOsString = localStorage.getItem('stockPendingPOs_v1');
+        if (pendingPOsString) {
+            const pendingPOs = JSON.parse(pendingPOsString);
+            const poIndex = pendingPOs.findIndex(po => po.id === documentData.operation.id);
+            if (poIndex > -1) {
+                pendingPOs[poIndex] = updatedOperation;
+                localStorage.setItem('stockPendingPOs_v1', JSON.stringify(pendingPOs));
+                showNotification(`Ordem de Compra ${updatedOperation.id} atualizada com sucesso!`, 'success');
+            } else {
+                showNotification("Erro: Ordem de Compra não encontrada na lista de pendentes.", "danger");
             }
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error("handlePdfUpload: Server response not OK:", errorData);
-            throw new Error(errorData.detail || `Server error: ${response.status}`);
+        } else {
+            showNotification("Erro: Banco de dados de Ordens de Compra pendentes (stockPendingPOs_v1) não encontrado.", "danger");
         }
+    } else {
+        const operationsHistoryString = localStorage.getItem('stockOperations_v2');
+        if (operationsHistoryString) {
+            const operationsHistory = JSON.parse(operationsHistoryString);
+            // Find the operation by its stable, original ID
+            const opIndex = operationsHistory.findIndex(op => op.id === documentData.operation.id);
 
-        const data = await response.json();
-        console.log("handlePdfUpload: PDF data received:", data);
-        currentProducts = data.produtos;
-        showUnitModal(data);
-
-    } catch (error) {
-        console.error('handlePdfUpload: Error processing PDF:', error);
-        alert(`Falha ao processar PDF: ${error.message}`);
-        preview.innerHTML = originalContent;
-    }
-}
-
-function showUnitModal(data) {
-    const windowEl = document.getElementById('unit-floating-window');
-    const backdrop = document.getElementById('modal-backdrop-invoice');
-    const productList = document.getElementById('modal-product-list');
-    productList.innerHTML = '';
-
-    // Apenas preenche a lista, o CSS cuidará do tamanho e rolagem
-    if (data.produtos && data.produtos.length > 0) {
-        data.produtos.forEach((product, index) => {
-            const productDiv = document.createElement('div');
-            productDiv.className = 'flex items-center justify-between p-3 bg-white rounded-md border';
-            productDiv.innerHTML = `
-                <div class="flex-1 mr-4 text-left">
-                    <p class="font-medium text-gray-800">${product.name}</p>
-                    <p class="text-xs text-gray-500">CÓD: ${product.code || 'N/A'}</p>
-                </div>
-                <select data-product-index="${index}" class="unit-select input-field" style="width: 100px; padding: 0.5rem; font-size: 0.875rem;">
-                    <option value="g">g</option>
-                    <option value="kg" selected>kg</option>
-                    <option value="ml">ml</option>
-                    <option value="l">L</option>
-                </select>
-            `;
-            productList.appendChild(productDiv);
-        });
-    }
-    
-    // Mostra o modal usando as novas classes CSS
-    backdrop.classList.add('visible');
-    windowEl.classList.add('visible');
-
-    document.getElementById('confirm-units-btn').onclick = () => confirmUnits(data);
-}
-
-function closeUnitModal() {
-    const windowEl = document.getElementById('unit-floating-window');
-    const backdrop = document.getElementById('modal-backdrop-invoice');
-    
-    // Esconde o modal usando as novas classes CSS
-    backdrop.classList.remove('visible');
-    windowEl.classList.remove('visible');
-}
-
-function confirmUnits(data) {
-    const selects = document.querySelectorAll('.unit-select');
-
-    selects.forEach(select => {
-        const productIndex = parseInt(select.dataset.productIndex, 10);
-        const selectedUnit = select.value;
-        if (currentProducts[productIndex]) {
-            currentProducts[productIndex].unitMeasureType = selectedUnit;
+            if (opIndex > -1) {
+                operationsHistory[opIndex] = updatedOperation;
+                
+                localStorage.setItem('stockOperations_v2', JSON.stringify(operationsHistory));
+                showNotification(`Operação ${updatedOperation.invoiceNumber} atualizada com sucesso!`, 'success');
+                console.log('stockOperations_v2 updated directly.');
+            } else {
+                // This case should ideally not happen if the document exists
+                // but we handle it just in case.
+                showNotification("Erro: Operação não encontrada no histórico principal.", "danger");
+            }
+        } else {
+            showNotification("Erro: Banco de dados de operações (stockOperations_v2) não encontrado.", "danger");
         }
-    });
-
-    closeUnitModal();
-
-    try {
-        populateFormWithPDFData(data);
-        updatePreview();
-    } catch (error) {
-        console.error("Error during form population or preview update:", error);
     }
 }
 
+function initialize() {
+    console.log("Initializing...");
 
-function populateFormWithPDFData(data) {
-    document.getElementById('supplier-list').innerHTML = '';
-    document.getElementById('cost-list').innerHTML = '';
+    const documentDataString = localStorage.getItem('currentDocument');
+    console.log('Loading from localStorage:', documentDataString);
+    let data;
 
-    addSupplierGroup();
-    const group = document.querySelector('#supplier-list .supplier-group');
-
-    if (data.fornecedor && data.fornecedor.nome) {
-        group.querySelector('[name=supplier_info]').value = data.fornecedor.nome;
-    }
-    
-    if (data.notaFiscal && data.notaFiscal.numero) {
-        document.getElementById('invoiceNumber').value = data.notaFiscal.numero;
+    if (documentDataString) {
+        data = JSON.parse(documentDataString);
+        allItems = data.allItems || [];
     }
 
-    const addButton = group.querySelector('button[onclick="addItem(this)"]');
+    if (data) {
+        const { operation, allSuppliers } = data;
 
-    if (currentProducts && currentProducts.length > 0) {
-        currentProducts.forEach(product => {
-            addItem(addButton);
-            const itemForms = group.querySelectorAll('.item');
-            const currentItemForm = itemForms[itemForms.length - 1];
+        // Base invoice data structure
+        invoiceData = {
+            invoiceNumber: operation.invoiceNumber || operation.id.replace('OP-', ''),
+            invoiceDate: operation.invoiceDate || new Date(operation.date).toISOString().split('T')[0],
+            exporterInfo: operation.exporterInfo || 'ALIBRAS ALIMENTOS BRASIL\nRua Volta Grande, 156 Cidade Industrial Satélite - Guarulhos, SP\nCEP: 07223-075 - Brasil\nCNPJ: 18.629.179/0001-06\nContact : Bruna da Silva Rodrigues\nPhone : + 55 33 999093304\nDUNS # 943527752\nFDA # 16606877688\nE-MAIL: alibrasexportimport@gmail.com',
+            importerInfo: operation.importerInfo || 'Loia Foods Import Export & Export LLC\n63-65 Gotthardt Street\nNewark, NJ , 07105 USA\nEmail: operations@loiafood.com\nCONSIGNER: 27 Malvern st. Newark, NJ 07105',
+            booking: operation.booking || '255641399',
+            paymentTerm: operation.paymentTerm || 'Due on receipt - US DOLLAR',
+            portOfDeparture: operation.portOfDeparture || 'SANTOS ( SP)',
+            destinationPort: operation.destinationPort || 'NY / NJ',
+            incoterm: operation.incoterm || 'FOB',
+            footerInfo: operation.footerInfo || 'Bank Information : Sent in document attached to the email where this proforma was also attached\nCredit To : Alibras Alimentos Brasil - CNPJ: 18.629.179/0001-06\nPayment Term : 100% advance - US Dollar\n\nI declare all the information contained in this invoice to be true and correct',
+            suppliers: [],
+            costs: operation.costs || [],
+            manualNetWeight: operation.manualNetWeight || 0,
+            manualGrossWeight: operation.manualGrossWeight || 0,
+            ptaxRate: operation.ptaxRate || null,
+            distribution: operation.distribution || { active: false, value: 0, type: 'percentage' }
+        };
 
-            currentItemForm.querySelector('[name=ncm]').value = product.ncm || '';
-            currentItemForm.querySelector('[name=desc]').value = product.name || '';
-            
-            const qtyUnitMatch = product.name.match(/(\d+)\s*[Xx]\s*(\d+)/);
-            currentItemForm.querySelector('[name=qty_unit]').value = qtyUnitMatch ? qtyUnitMatch[0] : '';
+        // *** NEW LOGIC: Prioritize saved suppliers/items over recalculating ***
+        if (operation.suppliers && operation.suppliers.length > 0) {
+            console.log("Loading from saved operation.suppliers...");
+            invoiceData.suppliers = operation.suppliers;
+            // Ensure nfeData is still available for weight calculations if needed
+            if (operation.nfeData) {
+                 nfeData = { notaFiscal: { pesoLiquido: 0, pesoBruto: 0 } };
+                operation.nfeData.forEach(nfe => {
+                    nfeData.notaFiscal.pesoLiquido += nfe.notaFiscal?.pesoLiquido || 0;
+                    nfeData.notaFiscal.pesoBruto += nfe.notaFiscal?.pesoBruto || 0;
+                });
+            }
 
-            currentItemForm.querySelector('[name=qty]').value = (product.quantity || 0);
-            
-            let qtyKgValue = 0;
-            if (qtyUnitMatch && qtyUnitMatch[1] && qtyUnitMatch[2]) {
-                const part1 = parseFloat(qtyUnitMatch[1]);
-                const part2 = parseFloat(qtyUnitMatch[2]);
-                const totalWeight = part1 * part2 * (product.quantity || 0);
+        } else if (operation.type === 'import' && operation.nfeData) {
+            console.log("First time load: Building suppliers from nfeData...");
+            nfeData = { notaFiscal: { pesoLiquido: 0, pesoBruto: 0 } };
+            operation.nfeData.forEach(nfe => {
+                nfeData.notaFiscal.pesoLiquido += nfe.notaFiscal?.pesoLiquido || 0;
+                nfeData.notaFiscal.pesoBruto += nfe.notaFiscal?.pesoBruto || 0;
+            });
 
-                if (product.unitMeasureType === 'g' || product.unitMeasureType === 'ml') {
-                    qtyKgValue = totalWeight / 1000;
-                } else {
-                    qtyKgValue = totalWeight;
+            invoiceData.manualNetWeight = nfeData.notaFiscal.pesoLiquido.toFixed(3);
+            invoiceData.manualGrossWeight = nfeData.notaFiscal.pesoBruto.toFixed(3);
+
+            operation.nfeData.forEach(nfe => {
+                const supplier = {
+                    info: '',
+                    items: []
+                };
+
+                const cnpjFromXml = nfe.fornecedor?.cnpj;
+                const matchedSupplier = allSuppliers.find(s => s.cnpj === cnpjFromXml);
+
+                if (matchedSupplier) {
+                    const fdaLine = `FDA#${matchedSupplier.fda || 'N/A'}`;
+                    const nameAddressLine = `${matchedSupplier.name}, ${matchedSupplier.address || 'Endereço não cadastrado'}`;
+                    supplier.info = `${fdaLine}\n${nameAddressLine}`;
+                } else if (nfe.fornecedor) {
+                    supplier.info = `Fornecedor: ${nfe.fornecedor.nome}\nCNPJ: ${nfe.fornecedor.cnpj} (Não cadastrado)`;
                 }
+
+                nfe.produtos.forEach(item => {
+                    const ncmFromXml = item.ncm;
+                    const matchedItemInStock = allItems.find(stockItem => {
+                        if (stockItem.ncm && ncmFromXml) {
+                            const normalizedStockNcm = stockItem.ncm.replace(/\D/g, '');
+                            const normalizedXmlNcm = ncmFromXml.replace(/\D/g, '');
+                            return normalizedStockNcm === normalizedXmlNcm;
+                        }
+                        return false;
+                    });
+
+                    let nameEn = '';
+                    if (matchedItemInStock) {
+                        nameEn = matchedItemInStock.nameEn || '';
+                    }
+
+                    let umValue = 'CS'; // Default
+                    if (item.packageType) {
+                        umValue = item.packageType;
+                    } else if (item.dadosCompletos?.unidade) {
+                        const xmlUnit = item.dadosCompletos.unidade.toUpperCase();
+                        if (xmlUnit === 'CAIXA' || xmlUnit === 'FARDO') {
+                            umValue = xmlUnit;
+                        }
+                    }
+
+                    supplier.items.push({
+                        qty: item.quantity || 0,
+                        ncm: item.ncm || '',
+                        desc: item.name || '',
+                        nameEn: nameEn,
+                        price: (item.costPrice || 0).toFixed(2),
+                        qty_unit: item.qtyUnit || '',
+                        qty_kg: (item.calculated_qty_kg || 0).toFixed(2),
+                        um: umValue
+                    });
+                });
+                invoiceData.suppliers.push(supplier);
+            });
+        } else { // Fallback for manual operations or other types
+             const itemsBySupplier = operation.items.reduce((acc, item) => {
+                const supplierId = item.supplierId || 'unknown';
+                if (!acc[supplierId]) acc[supplierId] = [];
+                acc[supplierId].push(item);
+                return acc;
+            }, {});
+
+            for (const supplierId in itemsBySupplier) {
+                const supplierData = {
+                    info: '',
+                    items: []
+                };
+                const supplier = allSuppliers.find(s => s.id === supplierId);
+
+                if (supplier) {
+                    supplierData.info = `FDA#${supplier.fda || ''} - ${supplier.name}`;
+                }
+
+                itemsBySupplier[supplierId].forEach(item => {
+                    const isManual = item.operationQuantity !== undefined;
+                    const opQty = isManual ? item.operationQuantity : (item.quantity || 0);
+                    const opPrice = isManual ? item.operationPrice : (item.costPrice || 0);
+                    
+                    let boxes;
+                    if (operation.type === 'simulation_preview' || operation.type === 'simulation' || operation.type === 'purchase_order') {
+                        boxes = opQty;
+                    } else {
+                        boxes = (item.unitsPerPackage > 0) ? Math.floor(opQty / item.unitsPerPackage) : opQty;
+                    }
+
+                    const finalQtyUnitValue = item.qtyUnit || `${item.unitsPerPackage || 1}x${item.unitMeasureValue || ''}${item.unitMeasureType || ''}`;
+                    const finalQtyKgValue = parseQtyUnit(finalQtyUnitValue);
+
+                    supplierData.items.push({
+                        ...item, // Preserve all original properties
+                        id: item.id,
+                        code: item.code,
+                        supplierId: item.supplierId,
+                        ncm: item.ncm || '',
+                        desc: item.name || '',
+                        nameEn: item.nameEn || '',
+                        price: opPrice.toFixed(2),
+                        qty_unit: finalQtyUnitValue,
+                        qty_kg: finalQtyKgValue,
+                        um: 'CS'
+                    });
+                });
+                invoiceData.suppliers.push(supplierData);
             }
-            currentItemForm.querySelector('[name=qty_kg]').value = qtyKgValue.toFixed(2);
-            
-            currentItemForm.querySelector('[name=price]').value = (product.costPrice || 0).toFixed(2);
-            currentItemForm.dataset.totalPriceBRL = product.totalPriceBRL || 0;
-        });
+        }
+    } else { // Fallback for when no document is in localStorage
+        invoiceData = {
+            invoiceNumber: '2060',
+            invoiceDate: new Date().toISOString().split('T')[0],
+            importerInfo: 'Loia Foods Import Export & Export LLC\n63-65 Gotthardt Street\nNewark, NJ , 07105 USA\nEmail: operations@loiafood.com\nCONSIGNER: 27 Malvern st. Newark, NJ 07105',
+            booking: '255641399',
+            paymentTerm: 'Due on receipt - US DOLLAR',
+            portOfDeparture: 'SANTOS ( SP)',
+            destinationPort: 'NY / NJ',
+            incoterm: 'FOB',
+            footerInfo: 'Bank Information : Sent in document attached to the email where this proforma was also attached\nCredit To : Alibras Alimentos Brasil - CNPJ: 18.629.179/0001-06\nPayment Term : 100% advance - US Dollar\n\nI declare all the information contained in this invoice to be true and correct',
+            suppliers: [
+                {
+                    info: 'FDA#17405485860-RIVELLI E BEZERRA INDUSTRIA E COMERCIO DE ALIMENTOS LTDA',
+                    items: [
+                        {
+                            qty: 30,
+                            ncm: '20052000',
+                            desc: 'Loia-Potato Chips (PALHA) 10X800Gr',
+                            qty_unit: '10X800G',
+                            qty_kg: 240,
+                            price: 38.68,
+                            um: 'CS'
+                        },
+                        {
+                            qty: 70,
+                            ncm: '20052000',
+                            desc: 'Loia-Potato Chips (PALHA) 20X300Gr',
+                            qty_unit: '20X300G',
+                            qty_kg: 420,
+                            price: 29.50,
+                            um: 'CS'
+                        }
+                    ]
+                }
+            ],
+            costs: [
+                {
+                    desc: 'EXPRESSO RADIANTE +13 Pallets',
+                    value: 2596.68
+                }
+            ],
+            manualNetWeight: 0,
+            manualGrossWeight: 0,
+            ptaxRate: null,
+            distribution: { active: false, value: 0, type: 'percentage' }
+        };
     }
 
     updatePreview();
+
+    // --- Populate and add listeners to control panel inputs ---
+    const ptaxRateInput = document.getElementById('ptaxRate');
+    const distributeValueInput = document.getElementById('distributeValue');
+    const distributeTypeInput = document.getElementById('distributeType');
+    const applyExchangeRateToggle = document.getElementById('applyExchangeRateToggle');
+    const distributeValueToggle = document.getElementById('distributeValueToggle');
+
+    // Set initial values from loaded data
+    if (invoiceData.ptaxRate) {
+        ptaxRateInput.value = invoiceData.ptaxRate;
+        applyExchangeRateToggle.checked = true;
+    }
+    if (invoiceData.distribution) {
+        distributeValueInput.value = invoiceData.distribution.value;
+        distributeTypeInput.value = invoiceData.distribution.type;
+        if (invoiceData.distribution.active) {
+            distributeValueToggle.checked = true;
+        }
+    }
+
+    // Add event listeners to update invoiceData on change
+    ptaxRateInput.addEventListener('input', (e) => {
+        const rate = parseBrazilianNumber(e.target.value);
+        invoiceData.ptaxRate = (!isNaN(rate) && rate > 0) ? rate : null;
+    });
+
+    distributeValueInput.addEventListener('input', (e) => {
+        const value = parseBrazilianNumber(e.target.value);
+        if (!isNaN(value)) {
+            invoiceData.distribution.value = value;
+        }
+    });
+
+    distributeTypeInput.addEventListener('change', (e) => {
+        invoiceData.distribution.type = e.target.value;
+    });
+
+    applyExchangeRateToggle.addEventListener('change', function() {
+        const rate = parseFloat(ptaxRateInput.value);
+        if (this.checked) {
+            if (!isNaN(rate) && rate > 0) {
+                invoiceData.ptaxRate = rate;
+            } else {
+                showNotification('Por favor, insira uma cotação válida.', 'danger');
+                this.checked = false;
+                return;
+            }
+        } else {
+            // When toggling off, we only deactivate the rate for calculation,
+            // but we don't nullify the data, so the input value is preserved.
+            invoiceData.ptaxRate = null; 
+        }
+        updatePreview();
+    });
+
+    distributeValueToggle.addEventListener('change', function() {
+        const value = parseFloat(distributeValueInput.value);
+        const type = distributeTypeInput.value;
+
+        if (this.checked) {
+            if (isNaN(value) || value === 0) {
+                showNotification('Por favor, insira um valor válido para distribuir.', 'danger');
+                this.checked = false;
+                return;
+            }
+            invoiceData.distribution.active = true;
+            invoiceData.distribution.value = value;
+            invoiceData.distribution.type = type;
+        } else {
+            // When toggling off, just deactivate it. The values remain.
+            invoiceData.distribution.active = false;
+        }
+        updatePreview();
+    });
+
+    document.getElementById('addCostBtn').addEventListener('click', addCost);
+    document.getElementById('save-changes-btn').addEventListener('click', saveChanges);
+
+
+
+    initializeEditableFieldsInvoice();
+
+    // --- DYNAMIC BACK BUTTON LOGIC ---
+    const backButton = document.getElementById('back-button');
+    const urlParams = new URLSearchParams(window.location.search);
+    const origin = urlParams.get('origin');
+
+    backButton.addEventListener('click', () => {
+        if (origin === 'simulation') {
+            window.location.href = 'index.html';
+        } else if (origin === 'purchase-orders') {
+            window.location.href = 'index.html#purchase-orders';
+        } else {
+            // Default back to the history view
+            window.location.href = 'index.html#operations-history';
+        }
+    });
 }
 
-window.onload = initialize;
+
+
+function showNotification(message, type = 'info', duration = 3000) {
+    const container = document.getElementById('notification-container');
+    if (!container) {
+        console.error('Notification container not found!');
+        return;
+    }
+
+    const notification = document.createElement('div');
+    notification.classList.add('notification', type);
+    notification.textContent = message;
+
+    container.appendChild(notification);
+
+    // Force reflow to ensure the transition plays
+    void notification.offsetWidth;
+
+    notification.classList.add('visible');
+
+    setTimeout(() => {
+        notification.classList.remove('visible');
+        notification.addEventListener('transitionend', () => {
+            notification.remove();
+        }, { once: true });
+    }, duration);
+}
+
+function initializeEditableFieldsInvoice() {
+    const preview = document.getElementById('invoice-preview');
+
+    preview.addEventListener('click', function(e) {
+        const field = e.target.closest('.editable-field');
+        if (!field) return;
+
+        if (field.isEditing) return;
+        field.isEditing = true;
+
+        field.contentEditable = true;
+        field.focus();
+
+        const onBlur = function() {
+            this.contentEditable = false;
+            this.isEditing = false;
+            
+            const targetId = this.dataset.targetId;
+            if (!targetId) return;
+
+            let value = this.innerText;
+
+            // --- VALIDATION FOR INVOICE DATE ---
+            if (targetId === 'invoiceDate') {
+                const dateRegex = /^(\d{2})-(\d{2})-(\d{4})$/;
+                const match = value.match(dateRegex);
+
+                if (!match) {
+                    showNotification('Formato de data inválido. Use DD-MM-YYYY.', 'danger');
+                    updatePreview(); // Re-render to revert to the old value
+                    return;
+                }
+
+                const [_, day, month, year] = match;
+                const isoDate = `${year}-${month}-${day}`;
+                
+                // More robust validation
+                const dateObj = new Date(isoDate + 'T00:00:00');
+                if (dateObj.getFullYear() != year || (dateObj.getMonth() + 1) != month || dateObj.getDate() != day) {
+                    showNotification('Data inválida (ex: dia ou mês não existe).', 'danger');
+                    updatePreview();
+                    return;
+                }
+
+                invoiceData.invoiceDate = isoDate;
+
+                // Manually update the display to the American format
+                const date = new Date(isoDate + 'T00:00:00');
+                const newFormattedDate = date.toLocaleDateString('en-US', { month: 'long', day: '2-digit', year: 'numeric' });
+                this.innerText = newFormattedDate;
+
+                return; // Stop further processing for this field
+            }
+            // --- END VALIDATION ---
+
+            // --- VALIDATION FOR INVOICE NUMBER ---
+            if (targetId === 'invoiceNumber') {
+                const numericValue = value.replace(/\D/g, '');
+                if (value !== numericValue) {
+                    showNotification('O número da Invoice deve conter apenas dígitos.', 'danger');
+                    this.innerText = invoiceData.invoiceNumber; // Revert
+                    return;
+                }
+
+                const operationsHistoryString = localStorage.getItem('stockOperations_v2');
+                const documentDataString = localStorage.getItem('currentDocument');
+                if (operationsHistoryString && documentDataString) {
+                    const operationsHistory = JSON.parse(operationsHistoryString);
+                    const documentData = JSON.parse(documentDataString);
+                    const isDuplicate = operationsHistory.some(op => 
+                        op.invoiceNumber === numericValue && op.id !== documentData.operation.id
+                    );
+                    if (isDuplicate) {
+                        showNotification('Este número de Invoice já existe. Por favor, insira um número único.', 'danger');
+                        this.innerText = invoiceData.invoiceNumber; // Revert
+                        return;
+                    }
+                }
+                value = numericValue;
+            }
+            // --- END VALIDATION ---
+
+            const keys = targetId.split('.');
+            let temp = invoiceData;
+            for (let i = 0; i < keys.length - 1; i++) {
+                temp = temp[keys[i]];
+            }
+            const propertyName = keys[keys.length - 1];
+
+            const numericProps = ['qty', 'price', 'value', 'totalPackages', 'manualGrossWeight', 'manualNetWeight', 'qty_kg'];
+            if (numericProps.includes(propertyName)) {
+                temp[propertyName] = parseBrazilianNumber(value);
+            } else {
+                temp[propertyName] = value;
+            }
+
+            if (propertyName === 'qty' || propertyName === 'qty_unit') {
+                if (propertyName === 'qty_unit') {
+                    const regex = /^(\d+)X(\d+)(G|GR|KG|L|ML)$/i;
+                    if (!regex.test(value)) {
+                        showNotification('Formato de Qty Unit inválido. Use o formato 32X400G.', 'danger');
+                        updatePreview(); // Re-render to show the old value
+                        return;
+                    }
+                }
+
+                const item = temp;
+                item.qty_kg = parseQtyUnit(item.qty_unit) * (parseFloat(item.qty) || 0);
+            }
+
+            // saveChanges(); // Removed to prevent notification on every blur
+            updatePreview();
+        };
+
+        field.addEventListener('blur', onBlur, { once: true });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initialize);

@@ -1,41 +1,29 @@
-async function fetchExchangeRate() {
-    const button = document.querySelector('button[onclick="fetchExchangeRate()"] i');
-    button.classList.add('fa-spin');
-    try {
-        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-        if (!response.ok) throw new Error('A resposta da rede não foi bem-sucedida');
-        const data = await response.json();
-        const rate = data.rates.BRL;
-        if (rate) {
-            document.getElementById('ptaxRate').value = rate.toFixed(4);
-            updatePreview();
-        }
-    } catch (error) {
-        console.error('Falha ao obter a taxa de câmbio:', error);
-        alert('Não foi possível obter a cotação do dólar automaticamente. Por favor, insira manualmente.');
-    } finally {
-        button.classList.remove('fa-spin');
-    }
-}
+let allItems = [];
+let packlistData = {};
 
 function updatePreview() {
     const preview = document.getElementById('invoice-preview');
     
-    const invoiceNumber = document.getElementById('invoiceNumber').value;
-    const invoiceDate = document.getElementById('invoiceDate').value;
-    const importerInfo = document.getElementById('importerInfo').value;
-    const container = document.getElementById('container').value;
-    const booking = document.getElementById('booking').value;
-    const paymentTerm = document.getElementById('paymentTerm').value;
-    const portOfDeparture = document.getElementById('portOfDeparture').value;
-    const destinationPort = document.getElementById('destinationPort').value;
-    const incoterm = document.getElementById('incoterm').value;
-    
-    const ptaxRate = parseFloat(document.getElementById('ptaxRate').value) || 0;
-    const countryOrigin = document.getElementById('countryOrigin').value;
-    const countryDestination = document.getElementById('countryDestination').value;
-    let ptaxInfo = document.getElementById('ptaxInfo').value;
-    const declarationText = document.getElementById('declarationText').value;
+    const {
+        invoiceNumber,
+        invoiceDate,
+        importerInfo,
+        exporterInfo,
+        container,
+        booking,
+        paymentTerm,
+        portOfDeparture,
+        destinationPort,
+        incoterm,
+        ptaxRate,
+        countryOrigin,
+        countryDestination,
+        ptaxInfo,
+        declarationText,
+        suppliers,
+        manualNetWeight,
+        manualGrossWeight
+    } = packlistData;
 
     const alibrasLogoUrl = 'images/alibras-logo.png';
     const secondaryLogoUrl = 'images/loia-logo.png';
@@ -49,18 +37,29 @@ function updatePreview() {
         formattedDate = `${month} .${day} .${year}`;
     }
 
-    let itemsAndSuppliersHTML = '';
     let totalPackages = 0;
     let netWeight = 0;
+    let itemsAndSuppliersHTML = '';
 
-    document.querySelectorAll('#supplier-list .supplier-group').forEach(group => {
-        group.querySelectorAll('.item-list .item').forEach(item => {
-            const qty = parseFloat(item.querySelector('[name=qty]').value) || 0;
-            const ncm = item.querySelector('[name=ncm]').value;
-            const desc = item.querySelector('[name=desc]').value;
-            const qty_unit = item.querySelector('[name=qty_unit]').value;
-            const qty_kg = parseFloat(item.querySelector('[name=qty_kg]').value) || 0;
-            const um = item.querySelector('[name=um]').value;
+    suppliers.forEach((supplier, groupIndex) => {
+        supplier.items.forEach((item, itemIndex) => {
+            const qty = parseFloat(item.qty) || 0;
+            const ncm = item.ncm;
+            const descPt = item.desc;
+            const descEn = item.nameEn;
+            let descriptionHtml = ''; // Initialize as empty for the main field
+            if (descEn) {
+                descriptionHtml = descEn;
+                if (descPt) { // Only add Portuguese if it exists
+                    descriptionHtml += `<br><small style="color: #555;">${descPt}</small>`;
+                }
+            } else if (descPt) { // If no English name, but Portuguese exists, display Portuguese as secondary
+                descriptionHtml = `<br><small style="color: #555;">${descPt}</small>`;
+            }
+
+            const qty_unit = item.qty_unit;
+            const qty_kg = parseFloat(item.qty_kg) || 0;
+            const um = item.um;
 
             totalPackages += qty;
             netWeight += qty_kg;
@@ -68,7 +67,7 @@ function updatePreview() {
             itemsAndSuppliersHTML += `
                 <tr>
                     <td class="text-center">${qty}</td>
-                    <td>${desc}</td>
+                    <td>${descriptionHtml}</td>
                     <td class="text-center">${qty_unit}</td>
                     <td class="text-center">${qty_kg.toFixed(2)}</td>
                     <td class="text-center">${um}</td>
@@ -77,7 +76,7 @@ function updatePreview() {
             `;
         });
         
-        const supplierInfo = group.querySelector('[name=supplier_info]').value;
+        const supplierInfo = supplier.info;
         if (supplierInfo) {
             itemsAndSuppliersHTML += `
                 <tr>
@@ -92,8 +91,19 @@ function updatePreview() {
         itemsAndSuppliersHTML += `<tr><td colspan="6">&nbsp;</td></tr>`;
     }
     
-    const grossWeight = netWeight > 0 ? netWeight * 1.035 : 0;
-    const ptaxLine = `PTAX : ${ptaxRate.toFixed(4)} USD`;
+    if (!isNaN(manualNetWeight) && manualNetWeight > 0) {
+        netWeight = manualNetWeight;
+    }
+
+    let grossWeight = netWeight > 0 ? netWeight * 1.035 : 0;
+    if (!isNaN(manualGrossWeight) && manualGrossWeight > 0) {
+        grossWeight = manualGrossWeight;
+    }
+    
+    let ptaxLine = '';
+    if (ptaxRate && ptaxRate > 0) {
+        ptaxLine = `PTAX : ${ptaxRate.toFixed(4)} USD`;
+    }
     const fullPtaxInfo = `${ptaxLine}\n${ptaxInfo}`.replace(/\n/g, '<br>');
 
     const footerHTML = `
@@ -117,15 +127,15 @@ function updatePreview() {
                     </tr>
                     <tr>
                         <td colspan="2" class="bold" style="border:none; padding: 8px 0; vertical-align: top;">
-                            Country of Origin of goods : ${countryOrigin}<br>
-                            Country of final Destination : ${countryDestination}
+                            Country of Origin of goods : <span class="editable-field" data-target-id="countryOrigin">${countryOrigin}</span><br>
+                            Country of final Destination : <span class="editable-field" data-target-id="countryDestination">${countryDestination}</span>
                         </td>
-                        <td style="border:none; text-align: right; font-size: 10px; vertical-align: top; padding: 8px 0; line-height: 1.4;">
+                        <td style="border:none; text-align: right; font-size: 10px; vertical-align: top; padding: 8px 0; line-height: 1.4;" class="editable-field" data-target-id="ptaxInfo">
                             ${fullPtaxInfo}
                         </td>
                     </tr>
                     <tr>
-                        <td colspan="3" style="border: none; padding-top: 8px;" class="bold">
+                        <td colspan="3" style="border: none; padding-top: 8px;" class="bold editable-field" data-target-id="declarationText">
                             ${declarationText}
                         </td>
                     </tr>
@@ -141,13 +151,13 @@ function updatePreview() {
 
     const invoiceDetailsHTML = `
         <td colspan="4" rowspan="7" class="bold" style="vertical-align: top; padding: 6px; line-height: 1.6;">
-            DATE: ${formattedDate}<br>
-            INVOICE #: ${invoiceNumber}<br>
-            CONTAINER: ${container}<br>
-            PORT OF DEPARTURE: ${portOfDeparture}<br>
-            INCONTERM: ${incoterm}<br>
-            DESTINATION PORT: ${destinationPort}<br>
-            BOOKING: ${booking}
+            DATE: <span class="editable-field" data-target-id="invoiceDate">${formattedDate}</span><br>
+            INVOICE #: <span class="editable-field" data-target-id="invoiceNumber">${invoiceNumber}</span><br>
+            CONTAINER: <span class="editable-field" data-target-id="container">${container}</span><br>
+            PORT OF DEPARTURE: <span class="editable-field" data-target-id="portOfDeparture">${portOfDeparture}</span><br>
+            INCONTERM: <span class="editable-field" data-target-id="incoterm">${incoterm}</span><br>
+            DESTINATION PORT: <span class="editable-field" data-target-id="destinationPort">${destinationPort}</span><br>
+            BOOKING: <span class="editable-field" data-target-id="booking">${booking}</span>
         </td>
     `;
 
@@ -162,15 +172,7 @@ function updatePreview() {
                         <img src="${alibrasLogoUrl}" alt="Alibras Logo" style="max-width: 250px; max-height: 120px; object-fit: contain;">
                     </td>
                     <td colspan="4" rowspan="9" style="vertical-align: top; padding: 6px; line-height: 1.4;">
-                        <b class="bold">ALIBRAS ALIMENTOS BRASIL</b><br>
-                        Av:Washington Luiz,585,Ap101,<
-                        Centro - Dom Cavati - MG - 35148-000 - Brasil<br>
-                        CNPJ: 18.629.179/0001-06<br>
-                        <b>Contact :</b> Bruna da Silva Rodrigues<br>
-                        <b>Phone :</b> + 55 33 999093304<br>
-                        <b>DUNS #</b> G43527752<br>
-                        <b>FDA #</b> 16606877688<br>
-                        <a href="mailto:alibrasexportimport@gmail.com" style="color: #000; text-decoration: none;"><b>E-MAIL:</b> alibrasexportimport@gmail.com</a>
+                        ${exporterInfo.replace(/\n/g, '<br>')}
                     </td>
                 </tr>
                 <tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
@@ -203,177 +205,193 @@ function updatePreview() {
     `;
 }
 
-function addSupplierGroup() {
-    const list = document.getElementById('supplier-list');
-    const group = document.createElement('div');
-    group.className = 'supplier-group';
-    const groupCount = list.children.length + 1;
-    group.innerHTML = `
-        <div class="group-header">
-            <h3 class="font-semibold text-slate-700">Grupo de Fornecedor #${groupCount}</h3>
-            <button class="btn-icon-danger" onclick="this.parentElement.parentElement.remove(); updatePreview();"><i class="fas fa-trash-alt"></i></button>
-        </div>
-        <div class="form-group">
-            <label>Informações do Fornecedor (FDA, Endereço, etc.)</label>
-            <textarea name="supplier_info" rows="2" oninput="updatePreview()"></textarea>
-        </div>
-        <div class="item-list space-y-3"></div>
-        <button onclick="addItem(this)" class="btn btn-secondary w-full mt-2 btn-sm"><i class="fas fa-plus mr-2"></i>Adicionar Produto</button>
-    `;
-    list.appendChild(group);
-    
-    const content = list.parentElement;
-    if (content.classList.contains('expanded')) {
-        content.style.maxHeight = content.scrollHeight + "px";
-    }
-    group.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    updatePreview();
-}
-
-function addItem(button) {
-    const itemList = button.previousElementSibling;
-    const item = document.createElement('div');
-    item.className = 'item';
-    item.innerHTML = `
-        <div class="item-header">
-            <span class="font-semibold text-slate-600">Produto</span>
-            <button class="btn-icon-danger" onclick="this.parentElement.parentElement.remove(); updatePreview();"><i class="fas fa-times"></i></button>
-        </div>
-        <div class="form-group"><label>Quantidade (QTYCX)</label><input type="number" name="qty" value="1" min="0" oninput="updatePreview()"></div>
-        <div class="form-group"><label>Descrição</label><input type="text" name="desc" oninput="updatePreview()"></div>
-        <div class="form-group"><label>Unidade Qtd.</label><input type="text" name="qty_unit" oninput="updatePreview()"></div>
-        <div class="form-group"><label>Peso (KG)</label><input type="number" name="qty_kg" value="0.00" step="0.01" min="0" oninput="updatePreview()"></div>
-        <div class="form-group"><label>U/M</label><input type="text" name="um" value="CS" oninput="updatePreview()"></div>
-        <div class="form-group"><label>NCM</label><input type="text" name="ncm" oninput="this.value = this.value.replace(/[^0-9]/g, ''); updatePreview();"></div>
-    `;
-    itemList.appendChild(item);
-
-    const content = itemList.closest('.accordion-content');
-    if (content && content.classList.contains('expanded')) {
-        content.style.maxHeight = content.scrollHeight + "px";
-    }
-    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    updatePreview();
-}
-
 function printInvoice() {
     window.print();
+}
+
+function saveChangesPackingList() {
+    if (document.activeElement && document.activeElement.isEditing) {
+        document.activeElement.blur();
+    }
+
+    const documentDataString = localStorage.getItem('currentDocument');
+    if (!documentDataString) {
+        showNotification("Erro: Dados da operação não encontrados para salvar.", "danger");
+        return;
+    }
+
+    const documentData = JSON.parse(documentDataString);
+
+    const updatedOperation = {
+        ...documentData.operation,
+        invoiceDate: packlistData.invoiceDate,
+        invoiceNumber: packlistData.invoiceNumber,
+        container: packlistData.container,
+        portOfDeparture: packlistData.portOfDeparture,
+        incoterm: packlistData.incoterm,
+        destinationPort: packlistData.destinationPort,
+        booking: packlistData.booking,
+        countryOrigin: packlistData.countryOrigin,
+        countryDestination: packlistData.countryDestination,
+        ptaxInfo: packlistData.ptaxInfo,
+        declarationText: packlistData.declarationText,
+        container: packlistData.container,
+        booking: packlistData.booking
+    };
+
+    const newDocumentData = {
+        ...documentData,
+        operation: updatedOperation
+    };
+
+    localStorage.setItem('currentDocument', JSON.stringify(newDocumentData));
+
+    const operationsHistoryString = localStorage.getItem('stockOperations_v2');
+    if (operationsHistoryString) {
+        const operationsHistory = JSON.parse(operationsHistoryString);
+        const opIndex = operationsHistory.findIndex(op => op.id === documentData.operation.id);
+
+        if (opIndex > -1) {
+            operationsHistory[opIndex] = {
+                ...operationsHistory[opIndex],
+                ...updatedOperation
+            };
+            localStorage.setItem('stockOperations_v2', JSON.stringify(operationsHistory));
+            showNotification(`Alterações no Packing List salvas com sucesso!`, 'success');
+        } else {
+            showNotification("Erro: Operação não encontrada no histórico principal.", "danger");
+        }
+    } else {
+        showNotification("Erro: Banco de dados de operações (stockOperations_v2) não encontrado.", "danger");
+    }
+}
+
+function showNotification(message, type = 'info', duration = 3000) {
+    const container = document.createElement('div');
+    container.id = 'notification-container';
+    if (!document.getElementById('notification-container')) {
+        document.body.appendChild(container);
+    }
+
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    document.getElementById('notification-container').appendChild(notification);
+
+    setTimeout(() => {
+        notification.classList.add('visible');
+    }, 10);
+
+    setTimeout(() => {
+        notification.classList.remove('visible');
+        setTimeout(() => notification.remove(), 500);
+    }, duration);
+}
+
+function initializeEditableFieldsPackingList() {
+    const preview = document.getElementById('invoice-preview');
+
+    preview.addEventListener('click', function(e) {
+        const field = e.target.closest('.editable-field');
+        if (!field) return;
+
+        if (field.isEditing) return;
+        field.isEditing = true;
+
+        field.contentEditable = true;
+        field.focus();
+
+        const onBlur = function() {
+            this.contentEditable = false;
+            this.isEditing = false;
+            
+            const targetId = this.dataset.targetId;
+            if (!targetId) return;
+
+            packlistData[targetId] = this.innerText;
+        };
+
+        field.addEventListener('blur', onBlur, { once: true });
+    });
 }
 
 function populateWithOperationData(data) {
     const { operation, allSuppliers } = data;
     
-    document.getElementById('supplier-list').innerHTML = '';
+    packlistData = {
+        invoiceNumber: operation.invoiceNumber || operation.id.replace('OP-', ''),
+        invoiceDate: operation.invoiceDate || new Date(operation.date).toISOString().split('T')[0],
+        exporterInfo: operation.exporterInfo || 'ALIBRAS ALIMENTOS BRASIL\nRua Volta Grande, 156 Cidade Industrial Satélite - Guarulhos, SP\nCEP: 07223-075 - Brasil\nCNPJ: 18.629.179/0001-06\nContact : Bruna da Silva Rodrigues\nPhone : + 55 33 999093304\nDUNS # 943527752\nFDA # 16606877688\nE-MAIL: alibrasexportimport@gmail.com',
+        importerInfo: operation.importerInfo || 'Loia Foods Import Export & Export LLC\n27 Malvern st. Newark, NJ 07105\nNewark, NJ , 07105 USA - Phone: 1 973 350 6197\nEmail: operations@loiafood.com',
+        container: operation.container || '[clique para editar]',
+        booking: operation.booking || '255641399',
+        paymentTerm: operation.paymentTerm || 'Due on receipt - US DOLLAR',
+        portOfDeparture: operation.portOfDeparture || 'SANTOS ( SP)',
+        destinationPort: operation.destinationPort || 'NY / NJ',
+        incoterm: operation.incoterm || 'FOB',
+        countryOrigin: operation.countryOrigin || 'Brazil',
+        countryDestination: operation.countryDestination || 'USA',
+        ptaxInfo: operation.ptaxInfo || 'CONTRATO DE CAMBIO ACC BANCO BRADESCO,\nDESAGIO:10.10%aa,NUMERO DO CONTRATO:\n498476052',
+        declarationText: operation.declarationText || 'I declare all the information contained in this packing list to be true and correct',
+        suppliers: operation.suppliers || [],
+        manualNetWeight: operation.manualNetWeight || 0,
+        manualGrossWeight: operation.manualGrossWeight || 0,
+        ptaxRate: operation.ptaxRate || null
+    };
 
-    document.getElementById('invoiceNumber').value = operation.id.replace('OP-', '');
-    document.getElementById('invoiceDate').value = new Date(operation.date).toISOString().split('T')[0];
-    
-    document.getElementById('importerInfo').value = 'Loia Foods Import Export & Export LLC\n27 Malvern st. Newark, NJ 07105\nNewark, NJ , 07105 USA - Phone: 1 973 350 6197\nEmail: operations@loiafood.com';
-    document.getElementById('container').value = '';
-    document.getElementById('booking').value = '255641399';
-    document.getElementById('paymentTerm').value = 'Due on receipt - US DOLLAR';
-    document.getElementById('portOfDeparture').value = 'SANTOS ( SP)';
-    document.getElementById('destinationPort').value = 'NY / NJ';
-    document.getElementById('incoterm').value = 'FOB';
+    if (!operation.suppliers || operation.suppliers.length === 0) {
+        if (operation.type === 'import' && operation.nfeData) {
+            console.log("First time load: Building suppliers from nfeData...");
+            operation.nfeData.forEach(nfe => {
+                const supplier = {
+                    info: '',
+                    items: []
+                };
+                const cnpjFromXml = nfe.fornecedor?.cnpj;
+                const matchedSupplier = allSuppliers.find(s => s.cnpj === cnpjFromXml);
 
-    document.getElementById('countryOrigin').value = 'Brazil';
-    document.getElementById('countryDestination').value = 'USA';
-    document.getElementById('ptaxInfo').value = 'CONTRATO DE CAMBIO ACC BANCO BRADESCO,\nDESAGIO:10.10%aa,NUMERO DO CONTRATO:
-498476052';
-    document.getElementById('declarationText').value = 'I declare all the information contained in this packing list to be true and correct';
+                if (matchedSupplier) {
+                    const fdaLine = `FDA#${matchedSupplier.fda || 'N/A'}`;
+                    const nameAddressLine = `${matchedSupplier.name}, ${matchedSupplier.address || 'Endereço não cadastrado'}`;
+                    supplier.info = `${fdaLine}\n${nameAddressLine}`;
+                } else if (nfe.fornecedor) {
+                    supplier.info = `Fornecedor: ${nfe.fornecedor.nome}\nCNPJ: ${nfe.fornecedor.cnpj} (Não cadastrado)`;
+                }
 
-    const itemsBySupplier = operation.items.reduce((acc, item) => {
-        const supplierId = item.supplierId || 'unknown';
-        if (!acc[supplierId]) acc[supplierId] = [];
-        acc[supplierId].push(item);
-        return acc;
-    }, {});
+                nfe.produtos.forEach(item => {
+                    const matchedItemInStock = allItems.find(stockItem => stockItem.ncm && item.ncm && stockItem.ncm.replace(/\D/g, '') === item.ncm.replace(/\D/g, ''));
+                    let nameEn = matchedItemInStock ? matchedItemInStock.nameEn || '' : '';
+                    let umValue = item.packageType || (item.dadosCompletos?.unidade.toUpperCase() === 'CAIXA' || item.dadosCompletos?.unidade.toUpperCase() === 'FARDO' ? item.dadosCompletos.unidade.toUpperCase() : 'CS');
 
-    for (const supplierId in itemsBySupplier) {
-        addSupplierGroup();
-        const groups = document.querySelectorAll('#supplier-list .supplier-group');
-        const currentGroup = groups[groups.length - 1];
-        const supplier = allSuppliers.find(s => s.id === supplierId);
-        
-        if (supplier) {
-            currentGroup.querySelector('[name=supplier_info]').value = `FDA#${supplier.fda || ''} - ${supplier.name}`;
+                    supplier.items.push({
+                        qty: item.quantity || 0,
+                        ncm: item.ncm || '',
+                        desc: item.name || '',
+                        nameEn: nameEn,
+                        qty_unit: item.qtyUnit || '',
+                        qty_kg: (item.calculated_qty_kg || 0).toFixed(2),
+                        um: umValue
+                    });
+                });
+                packlistData.suppliers.push(supplier);
+            });
         }
-
-        const addButton = currentGroup.querySelector('button[onclick="addItem(this)"]');
-        itemsBySupplier[supplierId].forEach(item => {
-            addItem(addButton);
-            const itemForms = currentGroup.querySelectorAll('.item');
-            const currentItemForm = itemForms[itemForms.length - 1];
-            
-            const boxes = (item.unitsPerPackage > 0) ? Math.floor(item.operationQuantity / item.unitsPerPackage) : 0;
-            currentItemForm.querySelector('[name=qty]').value = boxes;
-            currentItemForm.querySelector('[name=ncm]').value = item.ncm;
-            currentItemForm.querySelector('[name=desc]').value = item.nameEn || item.name;
-            currentItemForm.querySelector('[name=qty_unit]').value = `${item.unitsPerPackage || 1}x${item.unitMeasureValue}${item.unitMeasureType}`;
-            
-            let itemNetWeight = item.operationQuantity * (item.unitMeasureValue || 0);
-            if (item.unitMeasureType === 'g' || item.unitMeasureType === 'ml') {
-                itemNetWeight /= 1000;
-            }
-            currentItemForm.querySelector('[name=qty_kg]').value = itemNetWeight.toFixed(2);
-        });
     }
+
+    updatePreview();
+    initializeEditableFieldsPackingList();
+    document.getElementById('save-packlist-changes-btn').addEventListener('click', saveChangesPackingList);
 }
 
 function initialize() {
-    const packlistDataString = sessionStorage.getItem('packlistData');
-    
+    const packlistDataString = localStorage.getItem('currentDocument');
     if (packlistDataString) {
-        const packlistData = JSON.parse(packlistDataString);
-        populateWithOperationData(packlistData);
-        sessionStorage.removeItem('packlistData');
+        const data = JSON.parse(packlistDataString);
+        allItems = data.allItems || [];
+        populateWithOperationData(data);
     } else {
-        document.getElementById('invoiceNumber').value = '2060';
-        document.getElementById('invoiceDate').value = '2025-07-04';
-        document.getElementById('importerInfo').value = 'Loia Foods Import Export & Export LLC\n27 Malvern st. Newark, NJ 07105\nNewark, NJ , 07105 USA - Phone: 1 973 350 6197\nEmail: operations@loiafood.com';
-        
-        document.getElementById('container').value = '';
-        document.getElementById('booking').value = '255641399';
-        document.getElementById('paymentTerm').value = 'Due on receipt - US DOLLAR';
-        document.getElementById('portOfDeparture').value = 'SANTOS. SP.';
-        document.getElementById('destinationPort').value = 'NY / NJ';
-        document.getElementById('incoterm').value = 'FOB';
-        
-        document.getElementById('countryOrigin').value = 'Brazil';
-        document.getElementById('countryDestination').value = 'USA';
-        document.getElementById('ptaxInfo').value = 'CONTRATO DE CAMBIO ACC BANCO BRADESCO,\nDESAGIO:10.10%aa,NUMERO DO CONTRATO:
-498476052';
-        document.getElementById('declarationText').value = 'I declare all the information contained in this packing list to be true and correct';
-
-        addSupplierGroup();
-        const group1 = document.querySelector('#supplier-list .supplier-group:nth-child(1)');
-        group1.querySelector('[name=supplier_info]').value = 'FDA#17405485860-RIVELLI E BEZERRA INDUSTRIA E COMERCIO DE ALIMENTOS LTDA';
-        
-        const addButton1 = group1.querySelector('button[onclick="addItem(this)"]');
-        addItem(addButton1);
-        let p1 = group1.querySelector('.item:nth-child(1)');
-        p1.querySelector('[name=qty]').value = 2095;
-        p1.querySelector('[name=ncm]').value = '20052000';
-        p1.querySelector('[name=desc]').value = 'Loia-Potato Chips (PALHA) 10X800Gr';
-        p1.querySelector('[name=qty_unit]').value = '10X800G';
-        p1.querySelector('[name=qty_kg]').value = 21052.00;
+        console.error("currentDocument not found in localStorage. Cannot render packing list.");
     }
-
-    document.querySelectorAll('.accordion-header').forEach(button => {
-        button.addEventListener('click', () => {
-            const content = button.nextElementSibling;
-            button.classList.toggle('active');
-            content.classList.toggle('expanded');
-            
-            if (content.style.maxHeight) {
-                content.style.maxHeight = null;
-            } else {
-                content.style.maxHeight = content.scrollHeight + 32 + "px";
-            } 
-        });
-    });
-
-    fetchExchangeRate();
 }
 
 window.onload = initialize;
