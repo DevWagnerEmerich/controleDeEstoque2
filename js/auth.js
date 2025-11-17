@@ -10,6 +10,7 @@ export let currentUserProfile = null;
  * @param {string} password - A senha do utilizador.
  */
 export async function login(email, password) {
+    console.log('Tentando fazer login com o email:', email);
     const errorEl = document.getElementById('login-error');
     errorEl.textContent = ''; // Limpa erros anteriores
 
@@ -20,15 +21,22 @@ export async function login(email, password) {
     });
 
     if (error) {
-        console.error('Erro no login:', error.message);
+        console.error('Supabase login error:', error);
         errorEl.textContent = 'Email ou palavra-passe inválidos.';
         return;
     }
 
+    console.log('Supabase login data:', data);
+
     if (data.user) {
+        console.log('Utilizador autenticado, buscando perfil...');
         // Se o login for bem-sucedido, busca o perfil do utilizador na nossa tabela 'user_profiles'
         await fetchUserProfile(data.user.id);
+        console.log('Perfil do utilizador buscado, recarregando a página.');
         window.location.reload(); // Recarrega a página para aplicar o estado de login
+    } else {
+        console.log('Nenhum utilizador retornado nos dados, login falhou.');
+        errorEl.textContent = 'Ocorreu um erro inesperado no login.';
     }
 }
 
