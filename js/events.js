@@ -65,11 +65,17 @@ export function initializeEventListeners() {
     const desktopOperationsBtn = document.getElementById('desktop-nav-operations');
     const operationsDropdown = document.getElementById('operations-dropdown');
 
+    console.log('Desktop Operations Button:', desktopOperationsBtn);
+    console.log('Operations Dropdown:', operationsDropdown);
+
     if (desktopOperationsBtn && operationsDropdown) {
         desktopOperationsBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            console.log('Desktop Operations Button clicked!');
             const isHidden = operationsDropdown.classList.toggle('hidden');
+            console.log('Dropdown hidden status after toggle:', isHidden);
             desktopOperationsBtn.classList.toggle('open', !isHidden);
+            console.log('Button open status after toggle:', !isHidden);
         });
 
         // Click outside to close
@@ -77,6 +83,7 @@ export function initializeEventListeners() {
             if (!desktopOperationsBtn.contains(e.target) && !operationsDropdown.contains(e.target)) {
                 operationsDropdown.classList.add('hidden');
                 desktopOperationsBtn.classList.remove('open');
+                console.log('Clicked outside, dropdown closed.');
             }
         });
     }
