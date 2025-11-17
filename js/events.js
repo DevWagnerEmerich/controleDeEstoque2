@@ -3,7 +3,7 @@ import { openOperationModal, saveManualOperation } from './operations.js';
 import { openSimulationModal, previewSimulationAsInvoice, saveSimulationAsDraft, createPurchaseOrder, openSimAddItemModal } from './simulation.js';
 import { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport } from './reports.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
-import { handleLogout } from './auth.js';
+import { handleLogout, login } from './auth.js';
 import { clearAllData, getAllItems, updateItem, addMovement } from './database.js'; // Importa clearAllData e outras funções do database.js
 import { appData } from './main.js'; // Importa appData
 
@@ -28,6 +28,17 @@ export function initializeEventListeners() {
             element.addEventListener('keyup', handler);
         }
     };
+
+    // --- Login Form ---
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            login(email, password);
+        });
+    }
 
     // --- Mobile Header & Menu ---
     addClickListener('add-item-btn-header', openItemModal);

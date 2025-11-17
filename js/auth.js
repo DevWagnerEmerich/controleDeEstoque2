@@ -99,12 +99,3 @@ export function checkPermission(permissionKey) {
     if (currentUserProfile.role === 'admin') return true;
     return currentUserProfile.permissions && currentUserProfile.permissions[permissionKey];
 }
-
-// Adiciona o listener ao formulário de login
-document.getElementById('login-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    // O campo de utilizador agora é tratado como email
-    const email = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    login(email, password);
-});
