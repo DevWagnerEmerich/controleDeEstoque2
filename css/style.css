@@ -1034,7 +1034,6 @@ body.modal-is-open {
     border: 1px solid var(--border-color);
     width: 280px; /* Increased width */
     z-index: 40;
-    overflow: hidden;
     padding: 0.5rem;
 }
 
@@ -1071,9 +1070,4 @@ body.modal-is-open {
 
 .dropdown-item span {
     white-space: nowrap; /* Prevent line breaks */
-}
-
-.debug-active {
-    display: block !important;
-    background-color: red !important;
 }
