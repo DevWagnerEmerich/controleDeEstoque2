@@ -62,14 +62,14 @@ function formatNcm(value) {
     return value;
 }
 
-const getStatus = (item) => {
+export const getStatus = (item) => {
     if (item.quantity <= 0) return { text: 'Esgotado', class: 'bg-gray-200 text-gray-800', level: 3 };
     if (item.quantity <= item.min_quantity) return { text: 'Crítico', class: 'bg-red-100 text-red-800', level: 2 };
     if (item.quantity <= item.min_quantity * 1.2) return { text: 'Baixo', class: 'bg-yellow-100 text-yellow-800', level: 1 };
     return { text: 'OK', class: 'bg-green-100 text-green-800', level: 0 };
 };
 
-const formatCurrency = (value, currency = 'USD') => {
+export const formatCurrency = (value, currency = 'USD') => {
     const options = { style: 'currency', currency: currency, minimumFractionDigits: 2 };
     const locale = currency === 'BRL' ? 'pt-BR' : 'en-US';
     return new Intl.NumberFormat(locale, options).format(value || 0);
