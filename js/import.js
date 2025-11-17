@@ -203,4 +203,4 @@ export async function executarOperacaoDeEntrada(dados) { // Adicionado async aqu
     await fullUpdate();
 }
 
-export { openImportModal, downloadImportTemplate, handleFileImport, confirmImport, uploadAndProcessPoXml };
+// O bloco de exportação nomeado foi removido pois todas as funções já são exportadas individualmente.
