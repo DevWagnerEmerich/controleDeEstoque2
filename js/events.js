@@ -71,14 +71,10 @@ export function initializeEventListeners() {
     if (desktopOperationsBtn && operationsDropdown) {
         desktopOperationsBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            console.log('Desktop Operations Button clicked!');
-            const isHidden = operationsDropdown.classList.toggle('hidden');
-            console.log('Dropdown hidden status after toggle:', isHidden);
-            desktopOperationsBtn.classList.toggle('open', !isHidden);
-            console.log('Button open status after toggle:', !isHidden);
+            console.log('Toggling debug-active class');
+            operationsDropdown.classList.toggle('debug-active');
         });
 
-        /*
         // Click outside to close
         document.addEventListener('click', (e) => {
             if (!desktopOperationsBtn.contains(e.target) && !operationsDropdown.contains(e.target)) {
@@ -87,7 +83,6 @@ export function initializeEventListeners() {
                 console.log('Clicked outside, dropdown closed.');
             }
         });
-        */
     }
 
     const closeDropdown = () => {

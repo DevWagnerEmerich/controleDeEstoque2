@@ -1072,3 +1072,8 @@ body.modal-is-open {
 .dropdown-item span {
     white-space: nowrap; /* Prevent line breaks */
 }
+
+.debug-active {
+    display: block !important;
+    background-color: red !important;
+}
