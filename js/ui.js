@@ -156,7 +156,24 @@ export async function renderItems() {
         card.querySelector('.card-body').addEventListener('click', () => openItemDetailsModal(item.id));
         card.querySelector('[data-action="open-stock"]').addEventListener('click', () => openStockModal(item.id));
         card.querySelector('[data-action="open-item"]').addEventListener('click', (e) => { e.stopPropagation(); openItemModal(item.id); });
-        card.querySelector('[data-action="delete-item"]').addEventListener('click', (e) => { e.stopPropagation(); deleteItem(item.id); });
+        card.querySelector('[data-action="delete-item"]').addEventListener('click', (e) => { 
+            e.stopPropagation(); 
+            const itemToDelete = appData.items.find(i => i.id === item.id);
+            if (!itemToDelete) return;
+            showConfirmModal(
+                'Excluir Item?',
+                `Tem a certeza de que deseja excluir o item "${itemToDelete.name}"?`,
+                async () => {
+                    const success = await deleteItem(item.id); // Chama a função importada de database.js
+                    if (success) {
+                        showNotification('Item excluído com sucesso!', 'danger');
+                        await fullUpdate();
+                    } else {
+                        showNotification('Erro ao excluir item!', 'danger');
+                    }
+                }
+            );
+        });
 
         gridContainer.appendChild(card);
     });
@@ -486,28 +503,8 @@ export async function openItemModal(id = null) {
     openModal('item-modal');
 }
 
-export async function deleteItem(id) {
-    if (!checkPermission('delete')) {
-         showNotification('Não tem permissão para excluir itens.', 'danger');
-        return;
-    }
-    const itemToDelete = appData.items.find(i => i.id === id); // Usa appData.items
-    if (!itemToDelete) return;
-    
-    showConfirmModal(
-        'Excluir Item?', 
-        `Tem a certeza de que deseja excluir o item "${itemToDelete.name}"?`, 
-        async () => { // Adicionado async aqui
-            const success = await deleteItem(id); // Chama a função do Supabase
-            if (success) {
-                showNotification('Item excluído com sucesso!', 'danger');
-                await fullUpdate(); // Espera a atualização completa
-            } else {
-                showNotification('Erro ao excluir item!', 'danger');
-            }
-        }
-    );
-}
+// A função deleteItem agora é importada de database.js e usada diretamente.
+// A lógica de confirmação foi movida para o event listener em renderItems.
 
 export async function openSuppliersModal() {
     await renderSuppliersList(); // Espera a renderização
