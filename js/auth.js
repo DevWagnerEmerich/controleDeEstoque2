@@ -2,14 +2,14 @@
 import { supabase } from './supabase.js';
 
 // Variável para armazenar os dados do utilizador logado
-let currentUserProfile = null;
+export let currentUserProfile = null;
 
 /**
  * Tenta fazer login usando o email e a senha fornecidos.
  * @param {string} email - O email do utilizador.
  * @param {string} password - A senha do utilizador.
  */
-async function login(email, password) {
+export async function login(email, password) {
     const errorEl = document.getElementById('login-error');
     errorEl.textContent = ''; // Limpa erros anteriores
 
@@ -35,7 +35,7 @@ async function login(email, password) {
 /**
  * Faz logout do utilizador atual.
  */
-async function handleLogout() {
+export async function handleLogout() {
     const { error } = await supabase.auth.signOut();
     if (error) {
         console.error('Erro no logout:', error.message);
@@ -49,7 +49,7 @@ async function handleLogout() {
  * Busca o perfil do utilizador na tabela 'user_profiles' e armazena localmente.
  * @param {string} userId - O ID do utilizador do Supabase Auth.
  */
-async function fetchUserProfile(userId) {
+export async function fetchUserProfile(userId) {
     const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
@@ -59,7 +59,8 @@ async function fetchUserProfile(userId) {
     if (error) {
         console.error('Erro ao buscar perfil do utilizador:', error.message);
         currentUserProfile = null;
-    } else {
+    }
+    else {
         currentUserProfile = data;
     }
 }
@@ -68,7 +69,7 @@ async function fetchUserProfile(userId) {
  * Verifica a sessão do utilizador ao carregar a aplicação.
  * @returns {Promise<boolean>} - Retorna true se houver um utilizador logado, senão false.
  */
-async function initializeAuth() {
+export async function initializeAuth() {
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session && session.user) {
@@ -85,7 +86,7 @@ async function initializeAuth() {
  * @param {string} permissionKey - A chave da permissão a ser verificada (ex: 'add', 'delete').
  * @returns {boolean} - Retorna true se o utilizador tiver a permissão, senão false.
  */
-function checkPermission(permissionKey) {
+export function checkPermission(permissionKey) {
     if (!currentUserProfile) return false;
     if (currentUserProfile.role === 'admin') return true;
     return currentUserProfile.permissions && currentUserProfile.permissions[permissionKey];
@@ -99,6 +100,3 @@ document.getElementById('login-form').addEventListener('submit', (e) => {
     const password = document.getElementById('password').value;
     login(email, password);
 });
-
-// Exporta as funções e a variável do perfil do utilizador
-export { initializeAuth, handleLogout, checkPermission, currentUserProfile };

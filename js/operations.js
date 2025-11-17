@@ -85,37 +85,7 @@ function renderOperationAvailableItems() {
     feather.replace();
 }
 
-async function addItemToOperation(itemId) { // Adicionado async aqui
-    const item = { ...appData.items.find(i => i.id === itemId) }; // Usa appData.items
-    const qtyBoxInput = document.getElementById(`op-qty-box-${itemId}`);
-    const priceInput = document.getElementById(`op-price-${itemId}`);
-    
-    const quantityInBoxes = parseInt(qtyBoxInput.value);
-    const price = parseFloat(priceInput.value);
-
-    if (!quantityInBoxes || quantityInBoxes <= 0) {
-        showNotification("Por favor, insira uma quantidade válida.", "warning");
-        return;
-    }
-    
-    const quantityInUnits = quantityInBoxes * (item.units_per_package || 1); // Ajustado para units_per_package
-
-    if (quantityInUnits > item.quantity) {
-        showNotification("A quantidade de saída não pode ser maior que o stock disponível.", "warning");
-        return;
-    }
-
-    currentOperation.items.push({
-        ...item,
-        operationQuantity: quantityInUnits,
-        operationPrice: price
-    });
-
-    renderOperationSelectedItems();
-    renderOperationAvailableItems();
-    updateOperationSummary();
-}
-window.addItemToOperation = addItemToOperation;
+async function addItemToOperation(itemId) {
 
 function renderOperationSelectedItems() {
     const container = document.getElementById('operation-selected-items');
@@ -149,12 +119,6 @@ function renderOperationSelectedItems() {
 }
 
 function removeItemFromOperation(itemId) {
-    currentOperation.items = currentOperation.items.filter(item => item.id !== itemId);
-    renderOperationSelectedItems();
-    renderOperationAvailableItems();
-    updateOperationSummary();
-}
-window.removeItemFromOperation = removeItemFromOperation;
 
 function updateOperationSummary() {
     const summaryContainer = document.getElementById('operation-summary');
