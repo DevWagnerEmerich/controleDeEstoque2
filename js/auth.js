@@ -1,91 +1,104 @@
-import { users, saveUsers } from './database.js';
+// Importa o cliente Supabase
+import { supabase } from './supabase.js';
 
-let currentUser = null;
+// Variável para armazenar os dados do utilizador logado
+let currentUserProfile = null;
 
-async function hashPassword(password, salt) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password + salt);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function generateSalt() {
-    return Math.random().toString(36).substring(2, 15);
-}
-
-async function initializeDefaultAdmin() {
-    const storedUsers = localStorage.getItem('stockUsers_v2');
-    if (!storedUsers || JSON.parse(storedUsers).length === 0) {
-        const salt = generateSalt();
-        const hashedPassword = await hashPassword('admin123', salt);
-        const adminUser = {
-            id: `user_${Date.now()}`,
-            username: 'admin',
-            password: hashedPassword,
-            salt: salt,
-            role: 'admin',
-            permissions: {
-                add: true, edit: true, delete: true,
-                import: true, operation: true, reports: true
-            }
-        };
-        users.push(adminUser);
-        saveUsers();
-    } else {
-        users.length = 0;
-        users.push(...JSON.parse(storedUsers));
-    }
-}
-
-async function login(username, password) {
+/**
+ * Tenta fazer login usando o email e a senha fornecidos.
+ * @param {string} email - O email do utilizador.
+ * @param {string} password - A senha do utilizador.
+ */
+async function login(email, password) {
     const errorEl = document.getElementById('login-error');
-    const storedUsers = JSON.parse(localStorage.getItem('stockUsers_v2')) || [];
-    const foundUser = storedUsers.find(u => u.username === username);
+    errorEl.textContent = ''; // Limpa erros anteriores
 
-    if (foundUser) {
-        const hashedPassword = await hashPassword(password, foundUser.salt);
-        if (hashedPassword === foundUser.password) {
-            errorEl.textContent = '';
-            currentUser = foundUser;
-            sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
-            window.location.reload();
-        } else {
-            errorEl.textContent = 'Utilizador ou palavra-passe inválidos.';
-        }
-    } else {
-        errorEl.textContent = 'Utilizador ou palavra-passe inválidos.';
+    // Tenta fazer login com o Supabase Auth
+    const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+    });
+
+    if (error) {
+        console.error('Erro no login:', error.message);
+        errorEl.textContent = 'Email ou palavra-passe inválidos.';
+        return;
+    }
+
+    if (data.user) {
+        // Se o login for bem-sucedido, busca o perfil do utilizador na nossa tabela 'user_profiles'
+        await fetchUserProfile(data.user.id);
+        window.location.reload(); // Recarrega a página para aplicar o estado de login
     }
 }
 
-function initializeAuth() {
-    const loggedInUser = sessionStorage.getItem('currentUser');
-    if (loggedInUser) {
-        currentUser = JSON.parse(loggedInUser);
+/**
+ * Faz logout do utilizador atual.
+ */
+async function handleLogout() {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+        console.error('Erro no logout:', error.message);
+    } else {
+        currentUserProfile = null;
+        window.location.reload(); // Recarrega para ir para a tela de login
+    }
+}
+
+/**
+ * Busca o perfil do utilizador na tabela 'user_profiles' e armazena localmente.
+ * @param {string} userId - O ID do utilizador do Supabase Auth.
+ */
+async function fetchUserProfile(userId) {
+    const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+    if (error) {
+        console.error('Erro ao buscar perfil do utilizador:', error.message);
+        currentUserProfile = null;
+    } else {
+        currentUserProfile = data;
+    }
+}
+
+/**
+ * Verifica a sessão do utilizador ao carregar a aplicação.
+ * @returns {Promise<boolean>} - Retorna true se houver um utilizador logado, senão false.
+ */
+async function initializeAuth() {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session && session.user) {
+        await fetchUserProfile(session.user.id);
         return true;
     } else {
-        initializeDefaultAdmin();
+        currentUserProfile = null;
         return false;
     }
 }
 
+/**
+ * Verifica se o utilizador atual tem uma permissão específica.
+ * @param {string} permissionKey - A chave da permissão a ser verificada (ex: 'add', 'delete').
+ * @returns {boolean} - Retorna true se o utilizador tiver a permissão, senão false.
+ */
+function checkPermission(permissionKey) {
+    if (!currentUserProfile) return false;
+    if (currentUserProfile.role === 'admin') return true;
+    return currentUserProfile.permissions && currentUserProfile.permissions[permissionKey];
+}
+
+// Adiciona o listener ao formulário de login
 document.getElementById('login-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const username = document.getElementById('username').value;
+    // O campo de utilizador agora é tratado como email
+    const email = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    login(username, password);
+    login(email, password);
 });
 
-function handleLogout() {
-    currentUser = null;
-    sessionStorage.removeItem('currentUser');
-    window.location.reload();
-}
-
-function checkPermission(permissionKey) {
-    if (!currentUser) return false;
-    if (currentUser.role === 'admin') return true;
-    return currentUser.permissions && currentUser.permissions[permissionKey];
-}
-
-export { initializeAuth, handleLogout, checkPermission, currentUser, hashPassword, generateSalt };
+// Exporta as funções e a variável do perfil do utilizador
+export { initializeAuth, handleLogout, checkPermission, currentUserProfile };

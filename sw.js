@@ -4,14 +4,23 @@ const CACHE_NAME = 'stockcontrol-pro-cache-v1';
 // Lista de arquivos a serem cacheados
 const urlsToCache = [
   '/',
-  '/index.html',
-  'https://cdn.tailwindcss.com',
-  'https://cdn.jsdelivr.net/npm/chart.js',
-  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-  'https://placehold.co/192x192/4f46e5/ffffff?text=Pro',
-  'https://placehold.co/512x512/4f46e5/ffffff?text=Pro'
+  'index.html',
+  'manifest.json',
+  'css/style.css',
+  'css/modal_styles.css',
+  'js/main.js',
+  'js/events.js',
+  'js/ui.js',
+  'js/database.js',
+  'js/auth.js',
+  'js/operations.js',
+  'js/reports.js',
+  'js/invoice.js',
+  'js/packing_list.js',
+  'js/import.js',
+  'images/alibras-logo.png',
+  'images/estoque.png',
+  'images/loia-logo.png'
 ];
 
 // Evento de instalação: abre o cache e adiciona os arquivos da lista

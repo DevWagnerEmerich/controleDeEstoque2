@@ -1,0 +1,126 @@
+Orientações para Configuração do Supabase
+
+Este arquivo contém as instruções e o código SQL para configurar a base de dados do seu projeto no Supabase, que será usado para armazenar todos os dados da sua aplicação.
+
+---
+
+PASSO 1: Criar o Projeto no Supabase
+
+1.  Aceda a https://supabase.com.
+2.  Crie uma conta (pode usar sua conta do GitHub para facilitar).
+3.  Após fazer login, clique em "New Project".
+4.  Escolha uma organização (pode ser o seu nome de utilizador).
+5.  Dê um NOME ao seu projeto (sugestão: "controle-estoque", "stockcontrol-pro").
+6.  Gere uma SENHA para a base de dados (anote-a num lugar MUITO SEGURO, vamos precisar dela mais tarde!).
+7.  Escolha a REGIÃO mais próxima de si ou dos seus clientes (ex: "South America (São Paulo)").
+8.  Clique em "Create new project".
+
+Aguarde a criação do projeto (pode demorar alguns minutos).
+
+---
+
+PASSO 2: Criar as Tabelas da Base de Dados
+
+Após o seu projeto Supabase estar criado, siga estes passos para criar as tabelas:
+
+1.  Aceda ao SQL Editor no Painel de Controlo do Supabase:
+    *   No menu lateral esquerdo do seu projeto Supabase, clique em "SQL Editor" (o ícone de um terminal).
+    *   Clique em "New query".
+
+2.  Copie e Cole o Código SQL e Execute:
+    *   Copie TODO o código SQL abaixo.
+    *   Cole-o na janela do SQL Editor.
+    *   Clique no botão "RUN" (ou "Execute") para criar as tabelas.
+
+```sql
+-- Tabela para Fornecedores
+CREATE TABLE suppliers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    cnpj TEXT UNIQUE,
+    address TEXT,
+    fda TEXT,
+    email TEXT,
+    salesperson TEXT,
+    phone TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Tabela para Itens
+CREATE TABLE items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    name_en TEXT,
+    code TEXT UNIQUE,
+    ncm TEXT,
+    description TEXT,
+    quantity NUMERIC DEFAULT 0,
+    min_quantity NUMERIC DEFAULT 0,
+    cost_price NUMERIC DEFAULT 0,
+    sale_price NUMERIC DEFAULT 0,
+    package_type TEXT,
+    units_per_package NUMERIC DEFAULT 1,
+    unit_measure_value NUMERIC DEFAULT 1,
+    unit_measure_type TEXT,
+    supplier_id UUID REFERENCES suppliers(id), -- Chave estrangeira para fornecedores
+    image TEXT, -- URL para a imagem
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Tabela para Histórico de Operações (usando JSONB para dados aninhados)
+CREATE TABLE operations_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operation_id TEXT UNIQUE, -- Para armazenar o formato OP-XXXXX
+    date TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    items JSONB, -- Armazena um array de itens envolvidos na operação como JSONB
+    nfe_data JSONB, -- Armazena um array de dados da NF-e como JSONB
+    type TEXT NOT NULL, -- 'import', 'manual_in', 'manual_out', 'simulation_po'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Tabela para Movimentações (mudanças individuais de estoque)
+CREATE TABLE movements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id UUID REFERENCES items(id), -- Chave estrangeira para itens
+    type TEXT NOT NULL, -- 'in', 'out'
+    quantity NUMERIC NOT NULL,
+    price NUMERIC, -- Preço no momento da movimentação
+    reason TEXT,
+    operation_id UUID REFERENCES operations_history(id), -- Link para uma operação, se aplicável
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Tabela para Perfis de Utilizador (ligada aos utilizadores de autenticação do Supabase)
+CREATE TABLE user_profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id), -- Liga à tabela auth.users do Supabase
+    username TEXT UNIQUE NOT NULL,
+    role TEXT DEFAULT 'user', -- 'admin', 'user'
+    permissions JSONB, -- Armazena permissões como JSONB
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Tabela para Ordens de Compra Pendentes (espelhando a estrutura JS)
+CREATE TABLE pending_purchase_orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    po_id TEXT UNIQUE, -- Para armazenar o formato PO-XXXXX
+    date TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    items JSONB, -- Armazena um array de itens como JSONB
+    status TEXT DEFAULT 'pending', -- 'pending', 'completed', 'cancelled'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Ativar Row Level Security (RLS) para todas as tabelas (melhor prática para Supabase)
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE operations_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_purchase_orders ENABLE ROW LEVEL SECURITY;
+```
+
+**Após a execução, avise-me se ocorreu tudo bem ou se encontrou algum erro.**

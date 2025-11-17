@@ -1,61 +1,180 @@
-import { toggleSidebar, openItemModal, openSuppliersModal, openUsersModal, closeModal, resetUserForm, previewImage } from './ui.js';
-import { openOperationModal, finalizeOperationAndGenerate } from './operations.js';
-import { openImportModal, downloadImportTemplate, handleFileImport, handlePdfImport, confirmImport } from './import.js';
-import { openReportsModal, switchReportTab, renderProductAnalysisReports } from './reports.js';
+import { openItemModal, openSuppliersModal, openUsersModal, closeModal, resetUserForm, previewImage, openModal, openOperationsHistoryModal, showConfirmModal, showNotification, renderItems } from './ui.js';
+import { openOperationModal, saveManualOperation } from './operations.js';
+import { openSimulationModal, previewSimulationAsInvoice, saveSimulationAsDraft, createPurchaseOrder, openSimAddItemModal } from './simulation.js';
+import { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport } from './reports.js';
+import { openPurchaseOrdersModal } from './purchase-orders.js';
 import { handleLogout } from './auth.js';
-import { renderItems } from './ui.js';
+import { clearAllData, getAllItems, updateItem, addMovement } from './database.js'; // Importa clearAllData e outras funções do database.js
+import { appData } from './main.js'; // Importa appData
 
 export function initializeEventListeners() {
-    // Sidebar
-    document.getElementById('sidebar-open-btn').addEventListener('click', toggleSidebar);
-    document.getElementById('sidebar-close-btn').addEventListener('click', toggleSidebar);
-    document.getElementById('sidebar-overlay').addEventListener('click', toggleSidebar);
+    const addClickListener = (id, handler) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('click', handler);
+        }
+    };
 
-    // Main Navigation
-    document.getElementById('add-item-btn-sidebar').addEventListener('click', openItemModal);
-    document.getElementById('operation-btn-sidebar').addEventListener('click', openOperationModal);
-    document.getElementById('suppliers-btn-sidebar').addEventListener('click', openSuppliersModal);
-    document.getElementById('reports-btn-sidebar').addEventListener('click', openReportsModal);
-    document.getElementById('manage-users-btn-sidebar').addEventListener('click', openUsersModal);
-    document.getElementById('logout-btn').addEventListener('click', handleLogout);
-
-    // Mobile Navigation
-    document.getElementById('operation-btn-mobile').addEventListener('click', openOperationModal);
-    document.getElementById('add-item-btn-mobile').addEventListener('click', openItemModal);
-    document.getElementById('suppliers-btn-mobile').addEventListener('click', openSuppliersModal);
-    document.getElementById('reports-btn-mobile').addEventListener('click', openReportsModal);
-    document.getElementById('manage-users-btn-mobile').addEventListener('click', openUsersModal);
-
-    // Main content controls
-    document.getElementById('searchInput').addEventListener('keyup', renderItems);
-    document.getElementById('sortSelect').addEventListener('change', renderItems);
-    document.getElementById('filterSelect').addEventListener('change', renderItems);
-    document.getElementById('import-btn').addEventListener('click', openImportModal);
-
-    // Modals
-    document.getElementById('confirm-modal-cancel-btn').addEventListener('click', () => closeModal('confirm-modal'));
-    document.querySelectorAll('.closeModalBtn').forEach(btn => {
-        const modalId = btn.closest('.modal-backdrop').id;
-        btn.addEventListener('click', () => closeModal(modalId));
-    });
-    document.getElementById('reset-user-form-btn').addEventListener('click', resetUserForm);
-    document.getElementById('itemImageInput').addEventListener('change', (e) => previewImage(e, 'imagePreview', 'imagePlaceholder'));
+    const addChangeListener = (id, handler) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('change', handler);
+        }
+    };
     
-    // Import Modal
-    document.getElementById('download-template-btn').addEventListener('click', downloadImportTemplate);
-    document.getElementById('xlsx-importer').addEventListener('change', handleFileImport);
-    document.getElementById('pdf-importer-modal').addEventListener('change', handlePdfImport);
-    document.getElementById('confirm-import-btn').addEventListener('click', confirmImport);
+    const addKeyupListener = (id, handler) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('keyup', handler);
+        }
+    };
 
-    // Reports Modal
-    document.getElementById('reports-tab-nav').addEventListener('click', (e) => {
+    // --- Mobile Header & Menu ---
+    addClickListener('add-item-btn-header', openItemModal);
+    addClickListener('menu-suppliers', openSuppliersModal);
+    addClickListener('menu-users', openUsersModal);
+    addClickListener('menu-packlist', () => showNotification('Funcionalidade de Packing List precisa ser adaptada para Supabase.', 'info')); // Adaptado
+    addClickListener('menu-invoice', () => showNotification('Funcionalidade de Invoice precisa ser adaptada para Supabase.', 'info')); // Adaptado
+    addClickListener('menu-purchase-orders', openPurchaseOrdersModal);
+    addClickListener('logout-btn-menu', handleLogout);
+
+    // --- Desktop Header ---
+    addClickListener('desktop-add-item-btn', openItemModal);
+    addClickListener('desktop-suppliers-btn', openSuppliersModal);
+    addClickListener('desktop-users-btn', openUsersModal);
+    addClickListener('desktop-logout-btn', handleLogout);
+    addClickListener('desktop-reports-btn', openReportsModal);
+    addClickListener('desktop-nav-purchase-orders', openPurchaseOrdersModal);
+
+    // --- Operations Hub & Dropdown ---
+    // Mobile: Still uses the modal
+    addClickListener('nav-operations', () => openModal('operations-hub-modal'));
+
+    // Desktop: Uses the new dropdown
+    const desktopOperationsBtn = document.getElementById('desktop-nav-operations');
+    const operationsDropdown = document.getElementById('operations-dropdown');
+
+    if (desktopOperationsBtn && operationsDropdown) {
+        desktopOperationsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const isHidden = operationsDropdown.classList.toggle('hidden');
+            desktopOperationsBtn.classList.toggle('open', !isHidden);
+        });
+
+        // Click outside to close
+        document.addEventListener('click', (e) => {
+            if (!desktopOperationsBtn.contains(e.target) && !operationsDropdown.contains(e.target)) {
+                operationsDropdown.classList.add('hidden');
+                desktopOperationsBtn.classList.remove('open');
+            }
+        });
+    }
+
+    const closeDropdown = () => {
+        if(operationsDropdown) {
+            operationsDropdown.classList.add('hidden');
+            desktopOperationsBtn.classList.remove('open');
+        }
+    };
+
+    // Dropdown items
+    addClickListener('dropdown-import-op-btn', () => {
+        closeDropdown();
+        document.getElementById('xml-upload-main').click();
+    });
+    addClickListener('dropdown-simulate-op-btn', () => {
+        closeDropdown();
+        openSimulationModal();
+    });
+    addClickListener('dropdown-history-op-btn', () => {
+        closeDropdown();
+        openOperationsHistoryModal();
+    });
+
+    // Old Hub buttons (still used by mobile)
+    addClickListener('hub-import-op-btn', () => {
+        closeModal('operations-hub-modal');
+        document.getElementById('xml-upload-main').click();
+    });
+    addClickListener('hub-simulate-op-btn', () => {
+        closeModal('operations-hub-modal');
+        openSimulationModal();
+    });
+    addClickListener('hub-history-op-btn', () => {
+        closeModal('operations-hub-modal');
+        openOperationsHistoryModal();
+    });
+
+    // --- Simulation Modal ---
+    addClickListener('sim-add-new-item-btn', openSimAddItemModal);
+    addClickListener('sim-preview-invoice-btn', previewSimulationAsInvoice);
+    addClickListener('sim-save-draft-btn', saveSimulationAsDraft);
+    addClickListener('sim-finalize-btn', createPurchaseOrder);
+    addChangeListener('sim-select-all-chk', async (event) => { // Adicionado async aqui
+        if (event.target.checked) {
+            const availableItemsDivs = document.querySelectorAll('#sim-available-items .op-item-card.available:not(.added)');
+            if (availableItemsDivs.length === 0) {
+                showNotification('Nenhum item disponível para adicionar.', 'info');
+            } else {
+                // Esta lógica precisará ser adaptada para manipular a simulação de forma assíncrona
+                showNotification('Seleção de todos os itens na simulação precisa ser adaptada para Supabase.', 'warning');
+            }
+            event.target.checked = false;
+        }
+    });
+
+    // --- Dashboard Controls ---
+    addKeyupListener('searchInput', async () => await renderItems()); // Adicionado async/await
+    addChangeListener('sortSelect', async () => await renderItems()); // Adicionado async/await
+    addChangeListener('filterSelect', async () => await renderItems()); // Adicionado async/await
+
+    // --- Generic Modals ---
+    addClickListener('confirm-modal-cancel-btn', () => closeModal('confirm-modal'));
+    document.querySelectorAll('.closeModalBtn').forEach(btn => {
+        const modalId = btn.closest('.modal-backdrop')?.id;
+        if (modalId) {
+            btn.addEventListener('click', () => closeModal(modalId));
+        }
+    });
+    addClickListener('reset-user-form-btn', resetUserForm);
+    addChangeListener('itemImageInput', (e) => previewImage(e, 'imagePreview', 'imagePlaceholder'));
+    
+    // --- Reports Modal ---
+    addClickListener('reports-tab-nav', (e) => {
         if (e.target.matches('.report-tab')) {
             switchReportTab(e.target, e.target.dataset.tab);
         }
     });
-    document.getElementById('reports-period-filter').addEventListener('change', renderProductAnalysisReports);
+    addChangeListener('reports-period-filter', renderProductAnalysisReports);
+    addChangeListener('daily-movements-date-picker', renderDailyMovementsReport);
 
-    // Finalize Operation Buttons
-    document.getElementById('finalize-invoice-btn').addEventListener('click', () => finalizeOperationAndGenerate('invoice'));
-    document.getElementById('finalize-packlist-btn').addEventListener('click', () => finalizeOperationAndGenerate('packlist'));
+    // --- Manual Operation Modal ---
+    addClickListener('save-operation-btn', saveManualOperation);
+
+    // --- Login Screen ---
+    addClickListener('toggle-password-btn', (e) => {
+        if (e.target.id === 'password') return;
+
+        const passwordInput = document.getElementById('password');
+        const icon = document.querySelector('.password-toggle-icon');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            icon.setAttribute('data-feather', 'eye');
+        } else {
+            passwordInput.type = 'password';
+            icon.setAttribute('data-feather', 'eye-off');
+        }
+        feather.replace();
+    });
+
+    addClickListener('menu-clear-data', async () => { // Adicionado async aqui
+        showConfirmModal(
+            'Limpar todos os dados?',
+            'Esta ação é irreversível e irá apagar todos os itens, fornecedores e operações. Os dados de utilizador não serão afetados.',
+            async () => await clearAllData() // Chama a função assíncrona
+        );
+    });
+
+    feather.replace();
 }

@@ -351,9 +351,8 @@ function populateWithOperationData(data) {
                 const matchedSupplier = allSuppliers.find(s => s.cnpj === cnpjFromXml);
 
                 if (matchedSupplier) {
-                    const fdaLine = `FDA#${matchedSupplier.fda || 'N/A'}`;
                     const nameAddressLine = `${matchedSupplier.name}, ${matchedSupplier.address || 'Endereço não cadastrado'}`;
-                    supplier.info = `${fdaLine}\n${nameAddressLine}`;
+                    supplier.info = `FDA#${matchedSupplier.fda || 'N/A'} ${nameAddressLine}`.toUpperCase();
                 } else if (nfe.fornecedor) {
                     supplier.info = `Fornecedor: ${nfe.fornecedor.nome}\nCNPJ: ${nfe.fornecedor.cnpj} (Não cadastrado)`;
                 }

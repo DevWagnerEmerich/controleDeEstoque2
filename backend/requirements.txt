@@ -1,7 +1,4 @@
 fastapi
 uvicorn
-pypdf
-pytesseract
-Pillow
 python-multipart
-camelot-py[cv]
+lxml

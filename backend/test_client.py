@@ -6,11 +6,12 @@ def test_upload(file_path):
     """
     Sends a PDF file to the running FastAPI server and prints the response.
     """
-    url = "http://127.0.0.1:8000/extract-pdf-data/"
+    url = "http://127.0.0.1:8000/upload/"
     try:
         with open(file_path, "rb") as f:
             files = {"file": (file_path, f, "application/pdf")}
-            response = requests.post(url, files=files)
+            headers = {"Authorization": "secret"}
+            response = requests.post(url, files=files, headers=headers)
         
         response.raise_for_status() # Raise an exception for bad status codes
         

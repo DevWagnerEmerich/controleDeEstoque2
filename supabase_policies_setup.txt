@@ -1,0 +1,74 @@
+Orientações para Configuração das Políticas de Segurança (RLS) do Supabase
+
+Este arquivo contém as instruções e o código SQL para configurar as Políticas de Segurança de Nível de Linha (Row Level Security - RLS) da sua base de dados.
+
+Por padrão, o Supabase bloqueia todo o acesso aos dados por segurança. Este código cria as "regras" ou "permissões" para permitir que utilizadores autenticados (logados) possam ler e escrever dados nas tabelas que criámos.
+
+---
+
+PASSO 1: Aceder ao SQL Editor
+
+1.  No painel de controlo do seu projeto Supabase, no menu lateral esquerdo, clique em "SQL Editor" (o ícone de um terminal).
+2.  Clique em "New query".
+
+---
+
+PASSO 2: Copiar e Executar o Código SQL das Políticas
+
+1.  Copie TODO o código SQL abaixo.
+2.  Cole-o na janela do SQL Editor.
+3.  Clique no botão "RUN" (ou "Execute") para criar as políticas.
+
+```sql
+-- Políticas para a tabela 'suppliers'
+CREATE POLICY "Permitir acesso total a fornecedores para utilizadores autenticados"
+ON public.suppliers
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+-- Políticas para a tabela 'items'
+CREATE POLICY "Permitir acesso total a itens para utilizadores autenticados"
+ON public.items
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+-- Políticas para a tabela 'operations_history'
+CREATE POLICY "Permitir acesso total ao histórico para utilizadores autenticados"
+ON public.operations_history
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+-- Políticas para a tabela 'movements'
+CREATE POLICY "Permitir acesso total a movimentos para utilizadores autenticados"
+ON public.movements
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
+
+-- Políticas para a tabela 'user_profiles'
+CREATE POLICY "Permitir aos utilizadores ver/gerir os seus próprios perfis"
+ON public.user_profiles
+FOR ALL
+TO authenticated
+USING (auth.uid() = id) -- Um utilizador só pode mexer no seu próprio perfil
+WITH CHECK (true);
+
+-- Políticas para a tabela 'pending_purchase_orders'
+CREATE POLICY "Permitir acesso total a ordens de compra para utilizadores autenticados"
+ON public.pending_purchase_orders
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
+```
+
+---
+
+Após a execução, avise-me se ocorreu tudo bem ou se encontrou algum erro.

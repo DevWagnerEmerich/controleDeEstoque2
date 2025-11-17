@@ -1,47 +1,39 @@
-import { checkPermission, currentUser, hashPassword, generateSalt } from './auth.js';
-import { items, suppliers, movements, saveData, users, saveUsers } from './database.js';
+import { checkPermission, currentUserProfile } from './auth.js';
+import { 
+    getAllItems, getAllSuppliers, getAllMovements, getAllOperationsHistory, getAllPendingPurchaseOrders, getUserProfiles,
+    addItem, updateItem, deleteItem, addSupplier, updateSupplier, deleteSupplier, addMovement, addOperationToHistory,
+    addPendingPurchaseOrder, updatePendingPurchaseOrder, deletePendingPurchaseOrder,
+    clearAllData
+} from './database.js';
+import { appData } from './main.js'; // Importa a variável global de dados
 
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const mainContent = document.getElementById('main-content');
-    const overlay = document.getElementById('sidebar-overlay');
+document.addEventListener('operation-saved', () => {
+    openOperationsHistoryModal();
+});
 
-    sidebar.classList.toggle('-translate-x-full');
+export async function applyPermissionsToUI() {
+    if (!currentUserProfile) return;
+
+    // Mobile menu username
+    document.getElementById('menu-username').textContent = currentUserProfile.username;
+    // Desktop nav username
+    document.getElementById('desktop-username').textContent = currentUserProfile.username;
+
+    const isAdmin = currentUserProfile.role === 'admin';
     
-    if (window.innerWidth < 768) {
-        overlay.classList.toggle('hidden');
-    } else {
-        mainContent.classList.toggle('md:ml-64');
-    }
+    // Toggle admin-only buttons
+    document.getElementById('menu-users').style.display = isAdmin ? 'flex' : 'none';
+    document.getElementById('desktop-users-btn').style.display = isAdmin ? 'flex' : 'none';
+
+    // Disable/Enable buttons based on permissions
+    document.getElementById('add-item-btn-header').disabled = !checkPermission('add');
+    document.getElementById('desktop-add-item-btn').disabled = !checkPermission('add');
+    
+    await renderItems(); // Renderiza itens após aplicar permissões
 }
 
-function applyPermissionsToUI() {
-    if (!currentUser) return;
-
-    document.getElementById('current-username-desktop').textContent = currentUser.username;
-
-    const isAdmin = currentUser.role === 'admin';
-    
-    document.getElementById('manage-users-btn-sidebar').style.display = isAdmin ? 'flex' : 'none';
-    document.getElementById('manage-users-btn-mobile').style.display = isAdmin ? 'flex' : 'none';
-    
-    const mobileNavButtons = document.getElementById('mobile-nav-bar').querySelectorAll('button');
-    if (!isAdmin) {
-        let visibleButtons = 0;
-        mobileNavButtons.forEach(btn => {
-            if (btn.style.display !== 'none') visibleButtons++;
-        });
-        mobileNavButtons.forEach(btn => {
-            if(btn.id !== 'manage-users-btn-mobile') btn.className = btn.className.replace(/w-\d\/\d/, `w-1/${visibleButtons}`);
-        });
-    }
-
-    document.getElementById('add-item-btn-sidebar').disabled = !checkPermission('add');
-    document.getElementById('import-btn').disabled = !checkPermission('import');
-    document.getElementById('operation-btn-sidebar').disabled = !checkPermission('operation');
-    document.getElementById('reports-btn-sidebar').disabled = !checkPermission('reports');
-    
-    renderItems();
+export function normalizeCnpj(cnpj) {
+    return cnpj ? String(cnpj).replace(/\D/g, '') : '';
 }
 
 function formatCnpj(value) {
@@ -72,8 +64,8 @@ function formatNcm(value) {
 
 const getStatus = (item) => {
     if (item.quantity <= 0) return { text: 'Esgotado', class: 'bg-gray-200 text-gray-800', level: 3 };
-    if (item.quantity <= item.minQuantity) return { text: 'Crítico', class: 'bg-red-100 text-red-800', level: 2 };
-    if (item.quantity <= item.minQuantity * 1.2) return { text: 'Baixo', class: 'bg-yellow-100 text-yellow-800', level: 1 };
+    if (item.quantity <= item.min_quantity) return { text: 'Crítico', class: 'bg-red-100 text-red-800', level: 2 };
+    if (item.quantity <= item.min_quantity * 1.2) return { text: 'Baixo', class: 'bg-yellow-100 text-yellow-800', level: 1 };
     return { text: 'OK', class: 'bg-green-100 text-green-800', level: 0 };
 };
 
@@ -83,20 +75,18 @@ const formatCurrency = (value, currency = 'USD') => {
     return new Intl.NumberFormat(locale, options).format(value || 0);
 }
 
-function renderItems() {
-    const cardsContainer = document.getElementById('items-cards-container');
-    const tableBody = document.getElementById('items-table-body');
+export async function renderItems() {
+    const gridContainer = document.getElementById('items-grid-container');
     const emptyState = document.getElementById('empty-state');
-    cardsContainer.innerHTML = '';
-    tableBody.innerHTML = '';
+    gridContainer.innerHTML = '';
 
-    let filteredItems = [...items];
+    let filteredItems = [...appData.items]; // Usa appData.items
     
     const searchTerm = document.getElementById('searchInput').value.toLowerCase();
     if (searchTerm) {
         filteredItems = filteredItems.filter(item => 
             item.name.toLowerCase().includes(searchTerm) || 
-            (item.nameEn && item.nameEn.toLowerCase().includes(searchTerm)) ||
+            (item.name_en && item.name_en.toLowerCase().includes(searchTerm)) ||
             (item.code && item.code.toLowerCase().includes(searchTerm))
         );
     }
@@ -119,12 +109,10 @@ function renderItems() {
     
     if (filteredItems.length === 0) {
         emptyState.classList.remove('hidden');
-        cardsContainer.classList.add('hidden');
-        document.getElementById('items-table-container').classList.add('hidden');
+        gridContainer.classList.add('hidden');
     } else {
         emptyState.classList.add('hidden');
-        cardsContainer.classList.remove('hidden');
-        document.getElementById('items-table-container').classList.remove('hidden');
+        gridContainer.classList.remove('hidden');
     }
     
     const canEdit = checkPermission('edit');
@@ -132,192 +120,190 @@ function renderItems() {
 
     filteredItems.forEach(item => {
         const status = getStatus(item);
-        const boxes = (item.unitsPerPackage > 0) ? Math.floor(item.quantity / item.unitsPerPackage) : 0;
-        const packageLabel = item.packageType === 'fardo' ? 'fd' : 'cx';
+        const boxes = (item.units_per_package > 0) ? Math.floor(item.quantity / item.units_per_package) : 0;
+        const packageLabel = item.package_type === 'fardo' ? 'Fardos' : 'Caixas';
         const stockDisplay = `${boxes} ${packageLabel}`;
 
         const card = document.createElement('div');
-        card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col justify-between';
+        card.className = 'product-card';
         card.innerHTML = `
-            <div class="flex-grow cursor-pointer">
-                <div class="flex items-start space-x-4">
-                    <img src="${item.image || 'https://placehold.co/80x80/e0e7ff/4f46e5?text=' + item.name.charAt(0)}" alt="${item.name}" class="w-16 h-16 object-cover rounded-md flex-shrink-0">
-                    <div class="flex-grow">
-                        <h3 class="font-bold text-lg text-gray-800">${item.name}</h3>
-                        <p class="text-sm text-secondary">${item.code || 'N/A'}</p>
-                        <span class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full ${status.class}">${status.text}</span>
-                    </div>
-                </div>
-                <div class="mt-4 pt-4 border-t border-gray-200">
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="text-secondary">Stock: <strong class="text-gray-900">${stockDisplay}</strong></span>
-                        <span class="text-secondary">Venda: <strong class="text-gray-900">${formatCurrency(item.salePrice, 'BRL')}</strong></span>
-                    </div>
+            <div class="card-header">
+                <img src="${item.image || 'https://placehold.co/100x100/F9FAFB/1F2937?text=' + item.name.charAt(0)}" alt="${item.name}" class="card-image">
+                <div class="card-actions">
+                    <button data-action="open-item" data-id="${item.id}" class="card-action-button" ${canEdit ? '' : 'disabled'} title="Editar Item"><i data-feather="edit-2"></i></button>
+                    <button data-action="delete-item" data-id="${item.id}" class="card-action-button danger" ${canDelete ? '' : 'disabled'} title="Excluir Item"><i data-feather="trash-2"></i></button>
                 </div>
             </div>
-            <div class="flex justify-end space-x-2 mt-4">
-                <button data-action="open-stock" data-id="${item.id}" class="btn-icon-secondary"><i class="fas fa-plus"></i></button>
-                <button data-action="open-item" data-id="${item.id}" class="btn-icon-secondary" ${canEdit ? '' : 'disabled'}><i class="fas fa-edit"></i></button>
-                <button data-action="delete-item" data-id="${item.id}" class="btn-icon-danger" ${canDelete ? '' : 'disabled'}><i class="fas fa-trash"></i></button>
+            <div class="card-body">
+                <h3 class="card-title">${item.name}</h3>
+                <p class="card-code">${item.code || 'N/A'}</p>
+                <div class="card-info-row">
+                    <span class="card-info-label">Preço Venda</span>
+                    <span class="card-info-value">${formatCurrency(item.sale_price, 'BRL')}</span>
+                </div>
+                <div class="card-info-row">
+                    <span class="card-info-label">Stock</span>
+                    <span class="card-info-value">${stockDisplay}</span>
+                </div>
+            </div>
+            <div class="card-footer">
+                 <span class="status-badge status-${status.text.toLowerCase()}">${status.text}</span>
+                 <button data-action="open-stock" data-id="${item.id}" class="add-stock-button">Adicionar Stock</button>
             </div>
         `;
-        card.querySelector('.flex-grow.cursor-pointer').addEventListener('click', () => openItemDetailsModal(item.id));
+
+        // Adicionar event listeners
+        card.querySelector('.card-body').addEventListener('click', () => openItemDetailsModal(item.id));
         card.querySelector('[data-action="open-stock"]').addEventListener('click', () => openStockModal(item.id));
-        card.querySelector('[data-action="open-item"]').addEventListener('click', () => openItemModal(item.id));
-        card.querySelector('[data-action="delete-item"]').addEventListener('click', () => deleteItem(item.id));
-        cardsContainer.appendChild(card);
+        card.querySelector('[data-action="open-item"]').addEventListener('click', (e) => { e.stopPropagation(); openItemModal(item.id); });
+        card.querySelector('[data-action="delete-item"]').addEventListener('click', (e) => { e.stopPropagation(); deleteItem(item.id); });
 
-        const row = document.createElement('tr');
-        row.className = 'table-row';
-        row.innerHTML = `
-            <td class="table-body-cell clickable-cell">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 h-10 w-10">
-                        <img class="h-10 w-10 rounded-full object-cover" src="${item.image || 'https://placehold.co/40x40/e0e7ff/4f46e5?text=' + item.name.charAt(0)}" alt="${item.name}">
-                    </div>
-                    <div class="ml-4">
-                        <div class="text-sm font-medium text-gray-900">${item.name}</div>
-                        <div class="text-sm text-secondary">${item.nameEn || ''}</div>
-                    </div>
-                </div>
-            </td>
-            <td class="table-body-cell text-sm text-secondary">${item.code || 'N/A'}</td>
-            <td class="table-body-cell text-sm text-gray-900">${stockDisplay}</td>
-            <td class="table-body-cell">
-                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${status.class}">${status.text}</span>
-            </td>
-            <td class="table-body-cell text-sm text-gray-900 font-medium">${formatCurrency(item.salePrice, 'BRL')}</td>
-            <td class="table-body-cell text-right text-sm font-medium space-x-2">
-                <button data-action="open-stock" data-id="${item.id}" class="text-primary-DEFAULT hover:text-primary-hover" title="Entrada Manual"><i class="fas fa-plus"></i></button>
-                <button data-action="open-item" data-id="${item.id}" class="text-indigo-600 hover:text-indigo-900" title="Editar" ${canEdit ? '' : 'disabled'}><i class="fas fa-edit"></i></button>
-                <button data-action="delete-item" data-id="${item.id}" class="text-red-600 hover:text-red-900" title="Excluir" ${canDelete ? '' : 'disabled'}><i class="fas fa-trash"></i></button>
-            </td>
-        `;
-        row.querySelector('.clickable-cell').addEventListener('click', () => openItemDetailsModal(item.id));
-        row.querySelector('[data-action="open-stock"]').addEventListener('click', () => openStockModal(item.id));
-        row.querySelector('[data-action="open-item"]').addEventListener('click', () => openItemModal(item.id));
-        row.querySelector('[data-action="delete-item"]').addEventListener('click', () => deleteItem(item.id));
-        tableBody.appendChild(row);
+        gridContainer.appendChild(card);
     });
+
+    // Ativar os ícones da Feather
+    feather.replace();
 }
 
-function updateDashboard() {
+
+
+export async function renderDashboardStats() {
     const statsContainer = document.getElementById('dashboard-stats');
-    const totalItems = items.length;
-    const lowStockItems = items.filter(item => getStatus(item).level > 0 && getStatus(item).level < 3).length;
-    const totalValue = items.reduce((acc, item) => acc + (item.quantity * item.costPrice), 0);
-    const avgValue = totalItems > 0 ? totalValue / totalItems : 0;
+    if (!statsContainer) return;
 
-    statsContainer.innerHTML = `
-        <div class="card p-4 flex items-center cursor-pointer col-span-2 sm:col-span-1">
-            <div class="bg-primary-light p-3 rounded-full mr-4"><i class="fas fa-boxes-stacked text-primary-DEFAULT text-lg"></i></div>
-            <div><h4 class="text-sm font-medium text-secondary">Total de Itens</h4><p class="text-xl font-bold text-gray-800">${totalItems}</p></div>
+    const totalItems = appData.items.length; // Usa appData.items
+    const totalValue = appData.items.reduce((acc, item) => acc + (item.quantity * item.cost_price), 0); // Usa appData.items
+    const lowStockItems = appData.items.filter(item => item.quantity > 0 && item.quantity <= item.min_quantity).length; // Usa appData.items
+    const outOfStockItems = appData.items.filter(item => item.quantity <= 0).length; // Usa appData.items
+
+    const stats = [
+        { label: 'Valor Total do Stock', value: formatCurrency(totalValue, 'BRL'), icon: 'dollar-sign' },
+        { label: 'Itens Totais', value: totalItems, icon: 'package' },
+        { label: 'Itens com Stock Baixo', value: lowStockItems, icon: 'trending-down' },
+        { label: 'Itens Esgotados', value: outOfStockItems, icon: 'alert-triangle' }
+    ];
+
+    statsContainer.innerHTML = stats.map(stat => `
+        <div class="stat-card">
+            <div class="stat-icon-wrapper">
+                <i data-feather="${stat.icon}"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value">${stat.value}</span>
+                <span class="stat-label">${stat.label}</span>
+            </div>
         </div>
-        <div class="card p-4 flex items-center cursor-pointer col-span-2 sm:col-span-1">
-            <div class="bg-yellow-100 p-3 rounded-full mr-4"><i class="fas fa-exclamation-triangle text-yellow-500 text-lg"></i></div>
-            <div><h4 class="text-sm font-medium text-secondary">Itens em Alerta</h4><p class="text-xl font-bold ${lowStockItems > 0 ? 'text-warning-DEFAULT' : 'text-gray-800'}">${lowStockItems}</p></div>
-        </div>
-        <div class="card p-4 flex items-center col-span-2 sm:col-span-1">
-            <div class="bg-green-100 p-3 rounded-full mr-4"><i class="fas fa-dollar-sign text-green-500 text-lg"></i></div>
-            <div><h4 class="text-sm font-medium text-secondary">Valor do Stock</h4><p class="text-xl font-bold text-gray-800">${formatCurrency(totalValue, 'BRL')}</p></div>
-        </div>
-        <div class="card p-4 flex items-center col-span-2 sm:col-span-1">
-            <div class="bg-indigo-100 p-3 rounded-full mr-4"><i class="fas fa-balance-scale text-indigo-500 text-lg"></i></div>
-            <div><h4 class="text-sm font-medium text-secondary">Média por Item</h4><p class="text-xl font-bold text-gray-800">${formatCurrency(avgValue, 'BRL')}</p></div>
-        </div>
-    `;
+    `).join('');
+
+    feather.replace();
 }
 
-function fullUpdate() {
-    renderItems();
-    updateDashboard();
-    saveData();
+export async function fullUpdate() {
+    // Recarrega todos os dados da base de dados
+    const loadedData = await loadAllData();
+    Object.assign(appData, loadedData);
+
+    await renderDashboardStats();
+    await renderItems();
+    await renderOperationsHistory(); // Atualiza o histórico na aba de relatórios
+    await renderOperationsHistoryModal(); // Atualiza o conteúdo do modal de histórico
+    // saveData() não é mais necessário aqui, pois as funções de manipulação já salvam no BD
 }
 
-function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    modal.classList.remove('hidden');
-    setTimeout(() => {
-        modal.classList.add('flex');
-    }, 10);
+export function openModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        document.body.classList.add('modal-is-open');
+        modal.classList.add('is-open');
+        feather.replace();
+    }
 }
 
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    modal.classList.remove('flex');
-    setTimeout(() => {
-        modal.classList.add('hidden');
-    }, 300);
+export function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        document.body.classList.remove('modal-is-open');
+        modal.classList.remove('is-open');
+
+        // Limpa o hash da URL para evitar que o modal de histórico seja reaberto
+        history.pushState("", document.title, window.location.pathname + window.location.search);
+
+        // --- CORREÇÃO: Garante que uma view principal esteja sempre visível ---
+        // Aguarda a transição do modal terminar antes de verificar
+        setTimeout(() => {
+            const anyViewVisible = [...document.querySelectorAll('.main-view')].some(
+                view => !view.classList.contains('hidden')
+            );
+    
+            // Se nenhuma view estiver visível, mostra o dashboard por padrão.
+            if (!anyViewVisible) {
+                showView('dashboard');
+            }
+        }, 300); // 300ms é a duração da transição do modal
+    }
 }
 
-function showConfirmModal(title, text, onConfirm) {
+export function showConfirmModal(title, text, onConfirm) {
     document.getElementById('confirm-modal-title').innerText = title;
     document.getElementById('confirm-modal-text').innerText = text;
-    confirmAction = onConfirm;
+
+    const confirmBtn = document.getElementById('confirm-modal-btn');
+    
+    // Replace the button with a clone of itself to remove old event listeners
+    const newConfirmBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+    // Add the new event listener
+    newConfirmBtn.addEventListener('click', () => {
+        if (typeof onConfirm === 'function') {
+            onConfirm();
+        }
+        closeModal('confirm-modal');
+    });
+
     openModal('confirm-modal');
 }
 
-function openItemDetailsModal(id) {
-    const item = items.find(i => i.id === id);
+export async function openItemDetailsModal(id) {
+    const item = appData.items.find(i => i.id === id); // Usa appData.items
     if (!item) return;
 
-    const supplier = suppliers.find(s => s.id === item.supplierId);
-    const margin = item.costPrice > 0 ? ((item.salePrice - item.costPrice) / item.costPrice) * 100 : 0;
-    
-    let totalWeight = (item.quantity || 0) * (item.unitMeasureValue || 0);
-    let weightUnit = item.unitMeasureType;
-    if (weightUnit === 'g') {
-        totalWeight /= 1000;
-        weightUnit = 'kg';
-    } else if (weightUnit === 'ml') {
-        totalWeight /= 1000;
-        weightUnit = 'L';
-    }
-
-    const totalBoxes = (item.unitsPerPackage > 0) ? Math.floor(item.quantity / item.unitsPerPackage) : 0;
+    const supplier = appData.suppliers.find(s => s.id === item.supplier_id); // Usa appData.suppliers
+    const margin = item.cost_price > 0 ? ((item.sale_price - item.cost_price) / item.cost_price) * 100 : 0;
+    const totalBoxes = (item.units_per_package > 0) ? Math.floor(item.quantity / item.units_per_package) : 0;
 
     document.getElementById('details-item-name').innerText = item.name;
-    document.getElementById('details-item-name-en').innerText = item.nameEn || 'No English name';
+    document.getElementById('details-item-name-en').innerText = item.name_en || '';
     document.getElementById('details-item-image').src = item.image || `https://placehold.co/300x300/e0e7ff/4f46e5?text=${item.name.charAt(0)}`;
-    document.getElementById('details-item-cost').innerText = formatCurrency(item.costPrice, 'BRL');
-    document.getElementById('details-item-sale').innerText = formatCurrency(item.salePrice, 'BRL');
+    document.getElementById('details-item-cost').innerText = formatCurrency(item.cost_price, 'BRL');
+    document.getElementById('details-item-sale').innerText = formatCurrency(item.sale_price, 'BRL');
     document.getElementById('details-item-margin').innerText = `${margin.toFixed(1)}%`;
     document.getElementById('details-item-description').innerText = item.description || 'Nenhuma descrição fornecida.';
     document.getElementById('details-item-quantity').innerText = item.quantity;
-    document.getElementById('details-item-min-quantity').innerText = item.minQuantity;
     document.getElementById('details-item-supplier').innerText = supplier ? supplier.name : 'Não especificado';
     document.getElementById('details-item-code').innerText = item.code || 'N/A';
     document.getElementById('details-item-ncm').innerText = item.ncm ? formatNcm(item.ncm) : 'N/A';
-    document.getElementById('details-item-units-box').innerText = item.unitsPerPackage || '0';
-    document.getElementById('details-item-weight-unit').innerText = `${item.unitMeasureValue || 0} ${item.unitMeasureType}`;
-    document.getElementById('details-item-updated').innerText = new Date(item.updatedAt).toLocaleString('pt-BR');
-    document.getElementById('details-item-total-weight').innerText = `${totalWeight.toFixed(2)} ${weightUnit}`;
+    document.getElementById('details-item-qty-unit').innerText = item.unit_measure_value ? item.unit_measure_value.toFixed(2) : 'N/A'; // Ajustado para unit_measure_value
     document.getElementById('details-item-boxes').innerText = totalBoxes;
-    document.getElementById('details-package-type-label').innerText = `Total de ${item.packageType}s`;
-    document.getElementById('details-units-per-package-label').innerText = `Unid./${item.packageType}`;
-    document.getElementById('details-total-weight-label').innerText = (item.unitMeasureType === 'g' || item.unitMeasureType === 'kg') ? 'Peso Total em Stock' : 'Volume Total em Stock';
-    document.getElementById('details-item-total-weight-calc').innerText = `(${(item.quantity || 0)} un. x ${item.unitMeasureValue || 0} ${item.unitMeasureType}/un.)`;
+    document.getElementById('details-package-type-label').innerText = `Total de ${item.package_type}s`;
 
-
-    const movementsContainer = document.getElementById('details-item-movements');
+    const movementsContainer = document.getElementById('details-item-history');
     movementsContainer.innerHTML = '';
-    const itemMovements = movements.filter(m => m.itemId === id).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
+    const itemMovements = appData.movements.filter(m => m.item_id === id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5); // Usa appData.movements e created_at
 
     if (itemMovements.length === 0) {
         movementsContainer.innerHTML = `<p class="text-secondary text-center py-4">Nenhuma movimentação para este item.</p>`;
     } else {
         itemMovements.forEach(mov => {
             const div = document.createElement('div');
-            div.className = `p-3 rounded-md border-l-4 ${mov.type === 'in' ? 'bg-blue-50 border-blue-500' : 'bg-red-50 border-red-500'}`;
+            div.className = `report-movement-item ${mov.type}`;
             div.innerHTML = `
-                <div class="flex justify-between items-center text-sm">
-                    <div>
-                        <span class="font-bold uppercase">${mov.type === 'in' ? 'Entrada' : 'Saída'}</span>
-                        <span class="text-secondary">(${mov.quantity} un.)</span>
-                        ${mov.operationId ? `<span class="text-xs text-blue-600 ml-2">(${mov.operationId})</span>` : ''}
-                    </div>
-                    <span class="text-xs text-secondary">${new Date(mov.date).toLocaleString('pt-BR')}</span>
+                <div class="movement-info">
+                    <span class="font-bold uppercase">${mov.type === 'in' ? 'Entrada' : 'Saída'}</span>
+                    <span class="text-secondary">(${mov.quantity} un.)</span>
+                    ${mov.operation_id ? `<span class="movement-op">(${mov.operation_id})</span>` : ''}
                 </div>
+                <span class="movement-date">${new Date(mov.created_at).toLocaleString('pt-BR')}</span>
             `;
             movementsContainer.appendChild(div);
         });
@@ -326,7 +312,7 @@ function openItemDetailsModal(id) {
     openModal('item-details-modal');
 }
 
-function openItemModal(id = null) {
+export async function openItemModal(id = null) {
     if (id && !checkPermission('edit')) {
         showNotification('Não tem permissão para editar itens.', 'danger');
         return;
@@ -343,36 +329,45 @@ function openItemModal(id = null) {
 
     const supplierSelect = document.getElementById('itemSupplier');
     supplierSelect.innerHTML = `<option value="">Sem fornecedor</option>`;
-    suppliers.forEach(s => {
+    // Popula o select de fornecedores com dados do Supabase
+    appData.suppliers.forEach(s => { // Usa appData.suppliers
         supplierSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
     });
-    
+
     const ncmInput = document.getElementById('itemNcm');
+    const codeInput = document.getElementById('itemCode');
+
+    const sanitizeNumericInput = (e) => {
+        e.target.value = e.target.value.replace(/\D/g, '');
+    };
+
     ncmInput.addEventListener('input', (e) => {
+        sanitizeNumericInput(e);
         e.target.value = formatNcm(e.target.value);
     });
+    codeInput.addEventListener('input', sanitizeNumericInput);
 
     if (id) {
-        const item = items.find(i => i.id === id);
+        const item = appData.items.find(i => i.id === id); // Usa appData.items
         if (item) {
             document.getElementById('item-modal-title').innerText = 'Editar Item';
             document.getElementById('itemId').value = item.id;
             document.getElementById('itemName').value = item.name;
-            document.getElementById('itemNameEn').value = item.nameEn;
+            document.getElementById('itemNameEn').value = item.name_en;
             document.getElementById('itemCode').value = item.code;
             document.getElementById('itemNcm').value = formatNcm(item.ncm);
             document.getElementById('itemDescription').value = item.description;
-            const boxes = (item.unitsPerPackage > 0) ? (item.quantity / item.unitsPerPackage) : 0;
+            const boxes = (item.units_per_package > 0) ? (item.quantity / item.units_per_package) : 0;
             document.getElementById('quantityInBoxes').value = boxes;
-            document.getElementById('itemMinQuantity').value = item.minQuantity;
-            document.getElementById('itemCostPrice').value = item.costPrice;
-            document.getElementById('itemSalePrice').value = item.salePrice;
-            document.getElementById('itemSupplier').value = item.supplierId;
-            document.getElementById('packageType').value = item.packageType || 'caixa';
-            document.getElementById('unitsPerPackage').value = item.unitsPerPackage;
-            document.getElementById('unitMeasureValue').value = item.unitMeasureValue;
-            document.getElementById('unitMeasureType').value = item.unitMeasureType || 'g';
-            if(item.image) {
+            document.getElementById('itemMinQuantity').value = item.min_quantity;
+            document.getElementById('itemCostPrice').value = item.cost_price;
+            document.getElementById('itemSalePrice').value = item.sale_price;
+            document.getElementById('itemSupplier').value = item.supplier_id;
+            document.getElementById('packageType').value = item.package_type || 'caixa';
+            document.getElementById('unitsPerPackage').value = item.units_per_package;
+            document.getElementById('unitMeasureValue').value = item.unit_measure_value;
+            document.getElementById('unitMeasureType').value = item.unit_measure_type || 'g';
+            if (item.image) {
                 const preview = document.getElementById('imagePreview');
                 preview.src = item.image;
                 preview.classList.remove('hidden');
@@ -382,68 +377,217 @@ function openItemModal(id = null) {
     } else {
         document.getElementById('item-modal-title').innerText = 'Adicionar Novo Item';
     }
+
+    itemForm.onsubmit = async (e) => {
+        e.preventDefault();
+
+        // --- 1. Coleta e Validação de Dados ---
+        const name = document.getElementById('itemName').value;
+        const costPrice = document.getElementById('itemCostPrice').value;
+        const salePrice = document.getElementById('itemSalePrice').value;
+        const unitsPerPackageRaw = document.getElementById('unitsPerPackage').value;
+        const quantityInBoxesRaw = document.getElementById('quantityInBoxes').value;
+
+        if (!name) {
+            showNotification('O nome do item é obrigatório.', 'warning');
+            return;
+        }
+        if (!costPrice) {
+            showNotification('O Preço de Custo é obrigatório.', 'warning');
+            return;
+        }
+        if (!salePrice) {
+            showNotification('O Preço de Venda é obrigatório.', 'warning');
+            return;
+        }
+        if (!unitsPerPackageRaw) {
+            showNotification('Unidades por Embalagem é obrigatório.', 'warning');
+            return;
+        }
+        if (!quantityInBoxesRaw) {
+            showNotification('A Quantidade em Stock é obrigatória.', 'warning');
+            return;
+        }
+
+        // --- 2. Processamento e Parsing ---
+        const ncm = document.getElementById('itemNcm').value;
+        const ncmDigits = ncm.replace(/\D/g, '');
+        if (ncm && ncmDigits.length !== 8) {
+            showNotification('O NCM deve conter exatamente 8 dígitos.', 'warning');
+            return;
+        }
+
+        const unitsPerPackage = parseInt(unitsPerPackageRaw, 10);
+        const quantityInBoxes = parseInt(quantityInBoxesRaw, 10);
+        const minQuantity = parseInt(document.getElementById('itemMinQuantity').value, 10);
+        const parsedCostPrice = parseFloat(costPrice);
+        const parsedSalePrice = parseFloat(salePrice);
+        const unitMeasureValue = parseFloat(document.getElementById('unitMeasureValue').value);
+
+        if (isNaN(unitsPerPackage) || isNaN(quantityInBoxes) || isNaN(minQuantity) || isNaN(parsedCostPrice) || isNaN(parsedSalePrice)) {
+            showNotification('Campos numéricos inválidos. Verifique as quantidades e preços.', 'danger');
+            return;
+        }
+
+        const itemId = document.getElementById('itemId').value;
+        const imageFile = document.getElementById('itemImageInput').files[0];
+        let imageBase64 = null;
+
+        if (imageFile) {
+            try {
+                imageBase64 = await readFileAsBase64(imageFile);
+            } catch (error) {
+                showNotification('Erro ao processar a imagem.', 'danger');
+                return;
+            }
+        }
+
+        // --- 3. Montagem do Objeto de Dados ---
+        const itemData = {
+            name,
+            name_en: document.getElementById('itemNameEn').value, // Ajustado para name_en
+            code: document.getElementById('itemCode').value,
+            ncm: document.getElementById('itemNcm').value.replace(/\D/g, ''),
+            description: document.getElementById('itemDescription').value,
+            supplier_id: document.getElementById('itemSupplier').value, // Ajustado para supplier_id
+            package_type: document.getElementById('packageType').value, // Ajustado para package_type
+            units_per_package: unitsPerPackage, // Ajustado para units_per_package
+            quantity: quantityInBoxes * unitsPerPackage,
+            min_quantity: minQuantity, // Ajustado para min_quantity
+            cost_price: parsedCostPrice, // Ajustado para cost_price
+            sale_price: parsedSalePrice, // Ajustado para sale_price
+            unit_measure_value: isNaN(unitMeasureValue) ? 0 : unitMeasureValue, // Ajustado para unit_measure_value
+            unit_measure_type: document.getElementById('unitMeasureType').value, // Ajustado para unit_measure_type
+            updated_at: new Date().toISOString(),
+            image: imageBase64 // Nova imagem ou null
+        };
+
+        // --- 4. Salvamento ---
+        if (itemId) { // Editando
+            const updatedItem = await updateItem(itemId, itemData); // Chama a função do Supabase
+            if (updatedItem) {
+                showNotification('Item atualizado com sucesso!', 'success');
+            } else {
+                showNotification('Erro ao atualizar item!', 'danger');
+            }
+        } else { // Criando
+            const newItem = await addItem(itemData); // Chama a função do Supabase
+            if (newItem) {
+                showNotification('Item adicionado com sucesso!', 'success');
+            } else {
+                showNotification('Erro ao adicionar item!', 'danger');
+            }
+        }
+
+        await fullUpdate(); // Espera a atualização completa
+        closeModal('item-modal');
+    };
+
     openModal('item-modal');
 }
 
-function deleteItem(id) {
+export async function deleteItem(id) {
     if (!checkPermission('delete')) {
          showNotification('Não tem permissão para excluir itens.', 'danger');
         return;
     }
-    const itemToDelete = items.find(i => i.id === id);
+    const itemToDelete = appData.items.find(i => i.id === id); // Usa appData.items
     if (!itemToDelete) return;
     
     showConfirmModal(
         'Excluir Item?', 
         `Tem a certeza de que deseja excluir o item "${itemToDelete.name}"?`, 
-        () => {
-            items = items.filter(i => i.id !== id);
-            showNotification('Item excluído com sucesso!', 'danger');
-            fullUpdate();
+        async () => { // Adicionado async aqui
+            const success = await deleteItem(id); // Chama a função do Supabase
+            if (success) {
+                showNotification('Item excluído com sucesso!', 'danger');
+                await fullUpdate(); // Espera a atualização completa
+            } else {
+                showNotification('Erro ao excluir item!', 'danger');
+            }
         }
     );
 }
 
-function openSuppliersModal() {
-    renderSuppliersList();
+export async function openSuppliersModal() {
+    await renderSuppliersList(); // Espera a renderização
     resetSupplierForm();
-    
+
+    const supplierForm = document.getElementById('supplier-form');
     const cnpjInput = document.getElementById('supplierCnpj');
     const phoneInput = document.getElementById('supplierPhone');
     
-    cnpjInput.addEventListener('input', (e) => {
-        e.target.value = formatCnpj(e.target.value);
-    });
-    phoneInput.addEventListener('input', (e) => {
-        e.target.value = formatPhone(e.target.value);
-    });
+    cnpjInput.addEventListener('input', (e) => { e.target.value = formatCnpj(e.target.value); });
+    phoneInput.addEventListener('input', (e) => { e.target.value = formatPhone(e.target.value); });
+
+    supplierForm.onsubmit = async (e) => { // Adicionado async aqui
+        e.preventDefault();
+        const id = document.getElementById('supplierId').value;
+        const name = document.getElementById('supplierName').value;
+
+        if (!name) {
+            showNotification('O nome do fornecedor é obrigatório.', 'warning');
+            return;
+        }
+
+        const supplierData = {
+            name,
+            cnpj: document.getElementById('supplierCnpj').value.replace(/\D/g, ''),
+            address: document.getElementById('supplierAddress').value,
+            fda: document.getElementById('supplierFda').value,
+            email: document.getElementById('supplierEmail').value,
+            salesperson: document.getElementById('supplierSalesperson').value,
+            phone: document.getElementById('supplierPhone').value.replace(/\D/g, '')
+        };
+
+        if (id) { // Editando
+            const updatedSupplier = await updateSupplier(id, supplierData); // Chama a função do Supabase
+            if (updatedSupplier) {
+                showNotification('Fornecedor atualizado com sucesso!', 'success');
+            } else {
+                showNotification('Erro ao atualizar fornecedor!', 'danger');
+            }
+        } else { // Criando
+            const newSupplier = await addSupplier(supplierData); // Chama a função do Supabase
+            if (newSupplier) {
+                showNotification('Fornecedor adicionado com sucesso!', 'success');
+            } else {
+                showNotification('Erro ao adicionar fornecedor!', 'danger');
+            }
+        }
+
+        await fullUpdate(); // Espera a atualização completa
+        await renderSuppliersList(); // Espera a renderização
+        resetSupplierForm();
+    };
 
     openModal('suppliers-modal');
 }
 
-function renderSuppliersList() {
+export async function renderSuppliersList() {
     const suppliersListContainer = document.getElementById('suppliers-list');
     suppliersListContainer.innerHTML = '';
-    if (suppliers.length === 0) {
-        suppliersListContainer.innerHTML = `<p class="text-secondary text-center">Nenhum fornecedor registado.</p>`;
+    if (appData.suppliers.length === 0) { // Usa appData.suppliers
+        suppliersListContainer.innerHTML = `<p class="text-secondary" style="text-align: center;">Nenhum fornecedor registado.</p>`;
         return;
     }
-    suppliers.forEach(s => {
+    appData.suppliers.forEach(s => { // Usa appData.suppliers
         const div = document.createElement('div');
-        div.className = 'flex justify-between items-center p-3 rounded-md hover:bg-gray-100 cursor-pointer';
+        div.className = 'supplier-list-item';
         div.innerHTML = `
-            <div onclick="editSupplier('${s.id}')" class="flex-grow">
-                <span class="font-medium text-gray-800">${s.name}</span>
-                <p class="text-xs text-gray-500">${s.email || ''}</p>
+            <div onclick="editSupplier('${s.id}')" class="supplier-info">
+                <span class="supplier-name">${s.name}</span>
+                <p class="supplier-meta">${s.email || ''}</p>
             </div>
-            <button onclick="deleteSupplier('${s.id}', event)" class="text-red-500 hover:text-red-700 ml-4"><i class="fas fa-trash"></i></button>
+            <button onclick="deleteSupplier('${s.id}', event)" class="btn-delete-supplier"><i data-feather="trash-2"></i></button>
         `;
         suppliersListContainer.appendChild(div);
     });
+    feather.replace();
 }
 
-function editSupplier(id) {
-    const supplier = suppliers.find(s => s.id === id);
+export function editSupplier(id) {
+    const supplier = appData.suppliers.find(s => s.id === id); // Usa appData.suppliers
     if (!supplier) return;
     
     document.getElementById('supplier-form-title').innerText = "Editar Fornecedor";
@@ -456,69 +600,114 @@ function editSupplier(id) {
     document.getElementById('supplierSalesperson').value = supplier.salesperson;
     document.getElementById('supplierPhone').value = formatPhone(supplier.phone);
 }
+window.editSupplier = editSupplier;
 
-function resetSupplierForm() {
+export function resetSupplierForm() {
     document.getElementById('supplier-form').reset();
     document.getElementById('supplierId').value = '';
     document.getElementById('supplier-form-title').innerText = "Adicionar Novo Fornecedor";
 }
 
-function deleteSupplier(id, event) {
+export async function deleteSupplier(id, event) { // Adicionado async aqui
     event.stopPropagation();
-    const supplierToDelete = suppliers.find(s => s.id === id);
+    const supplierToDelete = appData.suppliers.find(s => s.id === id); // Usa appData.suppliers
     if (!supplierToDelete) return;
 
     showConfirmModal(
         'Excluir Fornecedor?', 
         `Tem a certeza de que deseja excluir o fornecedor "${supplierToDelete.name}"?`, 
-        () => {
-            suppliers = suppliers.filter(s => s.id !== id);
-            renderSuppliersList();
-            resetSupplierForm();
-            saveData();
-            showNotification('Fornecedor excluído!', 'danger');
+        async () => { // Adicionado async aqui
+            const success = await deleteSupplier(id); // Chama a função do Supabase
+            if (success) {
+                showNotification('Fornecedor excluído!', 'danger');
+                await fullUpdate(); // Espera a atualização completa
+                await renderSuppliersList(); // Espera a renderização
+                resetSupplierForm();
+            } else {
+                showNotification('Erro ao excluir fornecedor!', 'danger');
+            }
         }
     );
 }
+window.deleteSupplier = deleteSupplier;
 
-function openStockModal(id) {
-    const item = items.find(i => i.id === id);
+export async function openStockModal(id) {
+    const item = appData.items.find(i => i.id === id); // Usa appData.items
     if (!item) return;
     const form = document.getElementById('stock-form');
     form.reset();
     document.getElementById('stockItemId').value = id;
     document.getElementById('stock-modal-title').innerText = `Entrada Manual: ${item.name}`;
     
-    const packageLabel = item.packageType === 'fardo' ? 'Fardos' : 'Caixas';
+    const packageLabel = item.package_type === 'fardo' ? 'Fardos' : 'Caixas'; // Ajustado para package_type
     document.getElementById('movement-quantity-label').innerText = `Qtd. de ${packageLabel} a Adicionar`;
+
+    form.onsubmit = async (e) => { // Adicionado async aqui
+        e.preventDefault();
+        const itemId = document.getElementById('stockItemId').value;
+        const itemToUpdate = appData.items.find(i => i.id === itemId); // Usa appData.items
+        if (!itemToUpdate) {
+            showNotification('Erro: Item não encontrado.', 'danger');
+            return;
+        }
+
+        const quantityInBoxes = parseInt(document.getElementById('movementQuantity').value, 10);
+        if (isNaN(quantityInBoxes) || quantityInBoxes <= 0) {
+            showNotification('Por favor, insira uma quantidade numérica válida e positiva.', 'warning');
+            return;
+        }
+
+        const quantityInUnits = quantityInBoxes * (itemToUpdate.units_per_package || 1); // Ajustado para units_per_package
+        const reason = document.getElementById('movementReason').value || 'Entrada manual';
+
+        // Atualizar a quantidade do item
+        const updatedItem = await updateItem(itemId, { quantity: itemToUpdate.quantity + quantityInUnits, updated_at: new Date().toISOString() }); // Chama a função do Supabase
+        if (!updatedItem) {
+            showNotification('Erro ao atualizar quantidade do item!', 'danger');
+            return;
+        }
+
+        // Criar registo de movimento
+        const movement = {
+            item_id: itemId, // Ajustado para item_id
+            type: 'in',
+            quantity: quantityInUnits,
+            price: itemToUpdate.cost_price, // Usa o preço de custo do item para a entrada, ajustado para cost_price
+            reason: reason,
+            created_at: new Date().toISOString()
+        };
+        const newMovement = await addMovement(movement); // Chama a função do Supabase
+        if (!newMovement) {
+            showNotification('Erro ao registar movimento!', 'danger');
+            return;
+        }
+
+        showNotification(`Stock do item "${itemToUpdate.name}" atualizado com sucesso!`, 'success');
+        await fullUpdate(); // Espera a atualização completa
+        closeModal('stock-modal');
+    };
 
     openModal('stock-modal');
 }
 
-function showNotification(message, type = 'info') {
+export function showNotification(message, type = 'info') {
     const container = document.getElementById('notification-container');
     const notif = document.createElement('div');
-    const colors = {
-        info: 'bg-blue-500',
-        success: 'bg-green-500',
-        warning: 'bg-yellow-500',
-        danger: 'bg-red-500'
-    };
-    notif.className = `px-4 py-3 rounded-md text-white shadow-lg transform transition-all duration-300 translate-y-4 opacity-0 ${colors[type]}`;
+    notif.className = `notification ${type}`;
     notif.innerText = message;
     container.appendChild(notif);
     
     setTimeout(() => {
-        notif.classList.remove('translate-y-4', 'opacity-0');
+        notif.classList.add('visible');
     }, 10);
     
     setTimeout(() => {
-        notif.classList.add('translate-y-4', 'opacity-0');
+        notif.classList.remove('visible');
         setTimeout(() => notif.remove(), 500);
     }, 3000);
 }
 
-function previewImage(event, previewId, placeholderId) {
+export function previewImage(event, previewId, placeholderId) {
     const preview = document.getElementById(previewId);
     const placeholder = document.getElementById(placeholderId);
     if (event && event.target.files && event.target.files[0]) {
@@ -536,7 +725,7 @@ function previewImage(event, previewId, placeholderId) {
     }
 }
 
-function readFileAsBase64(file) {
+export function readFileAsBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
@@ -545,125 +734,367 @@ function readFileAsBase64(file) {
     });
 }
 
-async function openUsersModal() {
-    if (currentUser.role !== 'admin') {
+export async function openUsersModal() {
+    if (currentUserProfile.role !== 'admin') { // Usa currentUserProfile
         showNotification('Acesso negado.', 'danger');
         return;
     }
-    renderUsersList();
+    await renderUsersList(); // Espera a renderização
     resetUserForm();
     openModal('users-modal');
 
     const userForm = document.getElementById('user-form');
-    userForm.onsubmit = async (e) => {
+    userForm.onsubmit = async (e) => { // Adicionado async aqui
         e.preventDefault();
         const userId = document.getElementById('userId').value;
         const username = document.getElementById('formUsername').value;
-        const password = document.getElementById('formPassword').value;
+        // A senha não é mais gerenciada diretamente aqui para utilizadores existentes
+        // Novos utilizadores são criados via Supabase Auth e depois o perfil é criado aqui.
 
         const permissions = {};
         document.querySelectorAll('#permissions-container input[type="checkbox"').forEach(el => {
             permissions[el.id.replace('perm-', '')] = el.checked;
         });
 
-        if (userId) { // Editing user
-            const user = users.find(u => u.id === userId);
-            if (password) {
-                user.salt = generateSalt();
-                user.password = await hashPassword(password, user.salt);
+        if (userId) { // Editando perfil de utilizador existente
+            const updatedProfile = await updateUserProfile(userId, { username, permissions, updated_at: new Date().toISOString() }); // Chama a função do Supabase
+            if (updatedProfile) {
+                showNotification('Perfil de utilizador atualizado com sucesso!', 'success');
+            } else {
+                showNotification('Erro ao atualizar perfil de utilizador!', 'danger');
             }
-            user.permissions = permissions;
-            showNotification('Usuário atualizado com sucesso!', 'success');
-        } else { // Adding new user
-            if (!password) {
-                showNotification('A senha é obrigatória para novos usuários.', 'danger');
-                return;
-            }
-            const salt = generateSalt();
-            const hashedPassword = await hashPassword(password, salt);
-            const newUser = {
-                id: `user_${Date.now()}`,
-                username,
-                password: hashedPassword,
-                salt,
-                role: 'user', // Default role
-                permissions
-            };
-            users.push(newUser);
-            showNotification('Usuário adicionado com sucesso!', 'success');
+        } else { // Criando novo perfil de utilizador (assumindo que o utilizador já foi criado via Supabase Auth)
+            // Esta lógica precisará ser revista. Idealmente, a criação de utilizador e perfil
+            // seria feita num único fluxo, talvez com uma função de "signup" no auth.js
+            // Por enquanto, vamos apenas notificar que o perfil precisa de um utilizador Supabase Auth existente.
+            showNotification('Para criar um novo utilizador, primeiro crie-o no Supabase Auth e depois edite o perfil aqui.', 'info');
         }
-        saveUsers();
-        renderUsersList();
+        await fullUpdate(); // Espera a atualização completa
+        await renderUsersList(); // Espera a renderização
         resetUserForm();
     };
 }
 
-function renderUsersList() {
+export async function renderUsersList() {
     const usersListContainer = document.getElementById('users-list');
     usersListContainer.innerHTML = '';
-    users.forEach(user => {
+    const userProfiles = await getUserProfiles(); // Busca perfis do Supabase
+    if (userProfiles.length === 0) {
+        usersListContainer.innerHTML = `<p class="text-secondary" style="text-align: center;">Nenhum utilizador registado.</p>`;
+        return;
+    }
+    userProfiles.forEach(profile => {
         const div = document.createElement('div');
-        div.className = 'flex justify-between items-center p-3 rounded-md hover:bg-gray-100 cursor-pointer';
+        div.className = 'user-list-item';
         div.innerHTML = `
-            <div onclick="editUser('${user.id}')" class="flex-grow">
-                <span class="font-medium text-gray-800">${user.username}</span>
-                <p class="text-xs text-gray-500">${user.role}</p>
+            <div onclick="editUser('${profile.id}')" class="user-info">
+                <span class="user-name">${profile.username}</span>
+                <p class="user-meta">${profile.role}</p>
             </div>
-            ${currentUser.username !== user.username ? `<button onclick="deleteUser('${user.id}', event)" class="text-red-500 hover:text-red-700 ml-4"><i class="fas fa-trash"></i></button>` : ''}
+            ${currentUserProfile.id !== profile.id ? `<button onclick="deleteUser('${profile.id}', event)" class="btn-delete-user"><i data-feather="trash-2"></i></button>` : ''}
         `;
         usersListContainer.appendChild(div);
     });
+    feather.replace();
 }
 
-function editUser(userId) {
-    const user = users.find(u => u.id === userId);
+export function editUser(userId) {
+    const user = appData.userProfiles.find(u => u.id === userId); // Usa appData.userProfiles
     if (!user) return;
 
-    document.getElementById('user-form-title').innerText = "Editar Usuário";
+    document.getElementById('user-form-title').innerText = "Editar Utilizador";
     document.getElementById('userId').value = user.id;
     document.getElementById('formUsername').value = user.username;
-    document.getElementById('formUsername').disabled = true;
+    document.getElementById('formUsername').disabled = true; // Username não pode ser alterado aqui
     document.getElementById('formPassword').value = '';
-    document.getElementById('formPassword').placeholder = "Deixe em branco para não alterar";
+    document.getElementById('formPassword').placeholder = "Não é possível alterar a senha aqui.";
+    document.getElementById('formPassword').disabled = true; // Senha não pode ser alterada aqui
 
     document.querySelectorAll('#permissions-container input[type="checkbox"').forEach(el => {
         const permKey = el.id.replace('perm-', '');
-        el.checked = user.permissions[permKey] || false;
+        el.checked = user.permissions && user.permissions[permKey] || false;
     });
 }
+window.editUser = editUser;
 
-function resetUserForm() {
+export function resetUserForm() {
     document.getElementById('user-form').reset();
     document.getElementById('userId').value = '';
     document.getElementById('formUsername').disabled = false;
-    document.getElementById('user-form-title').innerText = "Adicionar Novo Usuário";
-    document.getElementById('formPassword').placeholder = "Palavra-passe";
+    document.getElementById('user-form-title').innerText = "Adicionar Novo Utilizador";
+    document.getElementById('formPassword').placeholder = "Não é possível adicionar utilizadores aqui.";
+    document.getElementById('formPassword').disabled = true; // Não adicionamos utilizadores por aqui
 }
 
-function deleteUser(userId, event) {
+export async function deleteUser(userId, event) { // Adicionado async aqui
     event.stopPropagation();
-    if (currentUser.role !== 'admin') return;
+    if (currentUserProfile.role !== 'admin') return; // Usa currentUserProfile
 
-    const userToDelete = users.find(u => u.id === userId);
+    const userToDelete = appData.userProfiles.find(u => u.id === userId); // Usa appData.userProfiles
     if (!userToDelete) return;
 
     showConfirmModal(
-        'Excluir Usuário?',
-        `Tem a certeza de que deseja excluir o usuário "${userToDelete.username}"?`,
-        () => {
-            users = users.filter(u => u.id !== userId);
-            saveUsers();
-            renderUsersList();
+        'Excluir Utilizador?',
+        `Tem a certeza de que deseja excluir o utilizador "${userToDelete.username}"?`,
+        async () => { // Adicionado async aqui
+            // Para excluir um utilizador, precisamos excluir o perfil e depois o utilizador do Supabase Auth
+            const { error: profileError } = await supabase.from('user_profiles').delete().eq('id', userId);
+            if (profileError) {
+                console.error('Erro ao excluir perfil:', profileError.message);
+                showNotification('Erro ao excluir perfil do utilizador!', 'danger');
+                return;
+            }
+
+            // ATENÇÃO: Excluir utilizadores diretamente via cliente Supabase JS não é recomendado por segurança.
+            // Isso deve ser feito via um backend seguro (Serverless Function) ou manualmente no painel do Supabase.
+            // Por enquanto, vamos apenas excluir o perfil.
+            showNotification('Perfil de utilizador excluído com sucesso! (Exclua o utilizador do Supabase Auth manualmente)', 'success');
+            
+            await fullUpdate(); // Espera a atualização completa
+            await renderUsersList(); // Espera a renderização
             resetUserForm();
-            showNotification('Usuário excluído!', 'danger');
         }
     );
 }
+window.deleteUser = deleteUser;
+
+export async function renderOperationsHistory() {
+    const container = document.getElementById('operations-history-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+    if (appData.operationsHistory.length === 0) { // Usa appData.operationsHistory
+        container.innerHTML = `<div class="text-center py-8 bg-white rounded-lg border border-gray-200">
+            <i class="fas fa-history text-4xl text-gray-300 mb-3"></i>
+            <p class="text-secondary">Nenhuma operação realizada ainda.</p>
+        </div>`;
+        return;
+    }
+
+    appData.operationsHistory.slice().reverse().forEach(op => { // Usa appData.operationsHistory
+        const opDate = new Date(op.date);
+        const displayId = op.operation_id || op.id; // Ajustado para operation_id
+        const card = document.createElement('div');
+        card.className = 'bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center';
+        
+        card.innerHTML = `
+            <div class="flex-grow mb-4 sm:mb-0">
+                <p class="font-bold text-primary-DEFAULT">OP: ${displayId}</p>
+                <p class="text-sm text-secondary">Data: ${opDate.toLocaleDateString('pt-BR')} às ${opDate.toLocaleTimeString('pt-BR')}</p>
+                <p class="text-sm text-secondary">Total de Itens: ${op.items ? op.items.length : 0}</p>
+            </div>
+            <div class="flex space-x-2 flex-shrink-0">
+                <button data-op-id="${op.id}" class="btn-icon-secondary view-invoice-btn" title="Ver Invoice"><i class="fas fa-file-invoice-dollar"></i></button>
+                <button data-op-id="${op.id}" class="btn-icon-secondary view-packlist-btn" title="Ver Packing List"><i class="fas fa-box-open"></i></button>
+                <button data-op-id="${op.id}" class="btn-icon-danger delete-op-btn" title="Excluir Operação"><i class="fas fa-trash"></i></button>
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    // Adicionar event listeners para os novos botões
+    document.querySelectorAll('#operations-history-list .view-invoice-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const opId = e.currentTarget.dataset.opId;
+            const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+            if (operation) {
+                // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
+                // window.open('gerenciador_invoice.html?origin=history', '_self');
+                showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+            }
+        });
+    });
+
+    document.querySelectorAll('#operations-history-list .view-packlist-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const opId = e.currentTarget.dataset.opId;
+            const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+            if (operation) {
+                // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
+                // window.open('gerador_packing_list.html', '_self');
+                showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+            }
+        });
+    });
+
+    document.querySelectorAll('#operations-history-list .delete-op-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const opId = e.currentTarget.dataset.opId;
+            deleteOperation(opId);
+        });
+    });
+
+    feather.replace();
+}
+
+
+
+export function showView(viewName) {
+    // Esconde todas as telas principais
+    document.querySelectorAll('.main-view').forEach(view => {
+        view.classList.add('hidden');
+    });
+
+    // Mostra a tela alvo
+    const targetView = document.getElementById(`view-${viewName}`);
+    if (targetView) {
+        targetView.classList.remove('hidden');
+    }
+
+    // Limpa o hash da URL para evitar que o modal de histórico seja reaberto
+    history.pushState("", document.title, window.location.pathname + window.location.search);
+
+    // Atualiza o título do cabeçalho mobile
+    const headerTitle = document.getElementById('header-title');
+    const viewTitles = {
+        dashboard: 'Dashboard',
+        operations: 'Central de Operações',
+        reports: 'Relatórios',
+        menu: 'Menu'
+    };
+    headerTitle.textContent = viewTitles[viewName] || 'StockControl Pro';
+
+    // Atualiza o estado ativo na navegação inferior (mobile)
+    document.querySelectorAll('.nav-item').forEach(link => link.classList.remove('active'));
+    const activeMobileLink = document.getElementById(`nav-${viewName}`);
+    if (activeMobileLink) {
+        activeMobileLink.classList.add('active');
+    }
+
+    // Atualiza o estado ativo na navegação superior (desktop)
+    document.querySelectorAll('.top-nav .nav-link').forEach(link => link.classList.remove('active'));
+    const activeDesktopLink = document.getElementById(`desktop-nav-${viewName}`);
+    if (activeDesktopLink) {
+        activeDesktopLink.classList.add('active');
+    }
+}
+
+export async function renderOperationsHistoryModal() {
+    const container = document.getElementById('operations-history-list-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    if (appData.operationsHistory.length === 0) { // Usa appData.operationsHistory
+        container.innerHTML = `<div style="text-align: center; padding: 2rem;">
+            <i data-feather="clock" style="width: 48px; height: 48px; margin: 0 auto 1rem; color: var(--text-secondary);"></i>
+            <p class="text-secondary">Nenhuma operação realizada ainda.</p>
+        </div>`;
+        feather.replace();
+    } else {
+        const list = document.createElement('div');
+        list.className = 'history-list';
+        appData.operationsHistory.slice().reverse().forEach(op => { // Usa appData.operationsHistory
+            const opDate = new Date(op.date);
+            const typeBadge = op.type === 'import' 
+                ? '<span class="badge import">Importada</span>' 
+                : '<span class="badge manual">Manual</span>';
+
+            // Use operation_id as the primary display, with id as a safeguard.
+            const displayId = op.operation_id || op.id;
+
+            const card = document.createElement('div');
+            card.className = 'history-card';
+            
+            card.innerHTML = `
+                <div class="history-card-details">
+                    <div class="history-card-header">
+                        <p class="history-id">OP: ${displayId}</p>
+                        ${typeBadge}
+                    </div>
+                    <p class="history-meta">Data: ${opDate.toLocaleDateString('pt-BR')} às ${opDate.toLocaleTimeString('pt-BR')}</p>
+                    <p class="history-meta">Total de Itens: ${op.items ? op.items.length : 0}</p>
+                </div>
+                <div class="history-card-actions">
+                    <button data-op-id="${op.id}" class="btn btn-secondary view-invoice-btn" title="Ver Invoice"><i data-feather="file-text"></i></button>
+                    <button data-op-id="${op.id}" class="btn btn-secondary view-packlist-btn" title="Ver Packing List"><i data-feather="package"></i></button>
+                    <button data-op-id="${op.id}" class="btn btn-danger delete-op-btn" title="Excluir Operação"><i data-feather="trash-2"></i></button>
+                </div>
+            `;
+            list.appendChild(card);
+        });
+        container.appendChild(list);
+
+        // Adicionar event listeners após a renderização
+        container.querySelectorAll('.view-invoice-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const opId = e.currentTarget.dataset.opId;
+                const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+                if (operation) {
+                    // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
+                    // window.open('gerenciador_invoice.html?origin=history', '_self');
+                    showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+                }
+            });
+        });
+
+        container.querySelectorAll('.view-packlist-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const opId = e.currentTarget.dataset.opId;
+                const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+                if (operation) {
+                    // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
+                    // window.open('gerador_packing_list.html', '_self');
+                    showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+                }
+            });
+        });
+
+        container.querySelectorAll('.delete-op-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const opId = e.currentTarget.dataset.opId;
+                deleteOperation(opId);
+            });
+        });
+
+        feather.replace();
+    }
+}
+
+export function openOperationsHistoryModal() {
+    renderOperationsHistoryModal();
+    openModal('operations-history-modal');
+}
+
+export async function deleteOperation(operationId) { // Adicionado async aqui
+    showConfirmModal(
+        'Excluir Operação?',
+        `Tem a certeza que deseja excluir a operação ${operationId}? Esta ação não pode ser desfeita.`,
+        async () => { // Adicionado async aqui
+            const operationToDelete = appData.operationsHistory.find(op => op.id === operationId); // Usa appData.operationsHistory
+            if (!operationToDelete) {
+                showNotification("Erro: Operação não encontrada para excluir.", "danger");
+                return;
+            }
+
+            // 1. Reverter o stock dos itens (precisa ser adaptado para Supabase)
+            // Isso é complexo e envolve buscar e atualizar itens no BD.
+            // Por enquanto, vamos apenas excluir a operação.
+            showNotification('Reversão de stock não implementada para Supabase ainda.', 'warning');
+
+            // 2. Remover os movimentos associados (precisa ser adaptado para Supabase)
+            // await supabase.from('movements').delete().eq('operation_id', operationId);
+
+            // 3. Remover a operação do histórico
+            const { error } = await supabase.from('operations_history').delete().eq('id', operationId); // Chama a função do Supabase
+            if (error) {
+                console.error('Erro ao excluir operação:', error.message);
+                showNotification('Erro ao excluir operação!', 'danger');
+                return;
+            }
+
+            showNotification(`Operação ${operationId} excluída com sucesso!`, 'danger');
+            await fullUpdate(); // Espera a atualização completa
+            await renderOperationsHistoryModal(); // Re-renderiza o modal de histórico
+        }
+    );
+}
+window.deleteOperation = deleteOperation;
 
 export { 
-    toggleSidebar, applyPermissionsToUI, formatCnpj, formatPhone, formatNcm, getStatus, formatCurrency, 
-    renderItems, updateDashboard, fullUpdate, openModal, closeModal, showConfirmModal, openItemDetailsModal, 
-    openItemModal, deleteItem, openSuppliersModal, renderSuppliersList, editSupplier, resetSupplierForm, 
-    deleteSupplier, openStockModal, showNotification, previewImage, readFileAsBase64,
-    openUsersModal, renderUsersList, editUser, resetUserForm, deleteUser
+    applyPermissionsToUI, fullUpdate, openModal, closeModal, 
+    showConfirmModal, openItemModal, openSuppliersModal, openStockModal, 
+    showNotification, openUsersModal, openItemDetailsModal, renderItems,
+    previewImage, resetSupplierForm, resetUserForm, renderOperationsHistory,
+    showView, formatCurrency, getStatus, renderOperationsHistoryModal, openOperationsHistoryModal
 };

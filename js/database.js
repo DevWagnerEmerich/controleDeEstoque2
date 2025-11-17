@@ -1,72 +1,302 @@
-export let items = [];
-export let suppliers = [];
-export let movements = [];
-export let operationsHistory = [];
-export let users = [];
-export let importedOperationsHistory = [];
-export let cumulativeImportedItems = [];
+// Importa o cliente Supabase
+import { supabase } from './supabase.js';
+import { currentUserProfile } from './auth.js'; // Para verificar permissões, se necessário
 
-export function saveData() {
-    localStorage.setItem('stockItems_v2', JSON.stringify(items));
-    localStorage.setItem('stockSuppliers_v2', JSON.stringify(suppliers));
-    localStorage.setItem('stockMovements_v2', JSON.stringify(movements));
-    localStorage.setItem('stockOperations_v2', JSON.stringify(operationsHistory));
-    localStorage.setItem('stockImportedDocs_v2', JSON.stringify(importedOperationsHistory));
-}
+// --- Funções de Leitura de Dados ---
 
-export function saveUsers() {
-    localStorage.setItem('stockUsers_v2', JSON.stringify(users));
-}
-
-export function loadDataAndRenderApp() {
-    const storedItems = localStorage.getItem('stockItems_v2');
-    if (storedItems && JSON.parse(storedItems).length > 0) {
-        items = JSON.parse(storedItems);
-        suppliers = JSON.parse(localStorage.getItem('stockSuppliers_v2')) || [];
-        movements = JSON.parse(localStorage.getItem('stockMovements_v2')) || [];
-        operationsHistory = JSON.parse(localStorage.getItem('stockOperations_v2')) || [];
-        users = JSON.parse(localStorage.getItem('stockUsers_v2')) || [];
-        importedOperationsHistory = JSON.parse(localStorage.getItem('stockImportedDocs_v2')) || [];
-    } else {
-        loadFictitiousData();
+/**
+ * Busca todos os itens da base de dados.
+ * @returns {Array} - Uma lista de itens.
+ */
+export async function getAllItems() {
+    const { data, error } = await supabase.from('items').select('*');
+    if (error) {
+        console.error('Erro ao buscar itens:', error.message);
+        return [];
     }
+    return data;
 }
 
-export function loadFictitiousData() {
-    suppliers = [
-        { id: 'sup_1', name: 'Fecularia Lopes', cnpj: '12345678000190', address: 'Estrada Divisoria, S/N, Nova Londrina, PR', fda: '11649468954', email: 'contato@lopes.com', salesperson: 'Carlos', phone: '44999998888' },
-        { id: 'sup_2', name: 'Rivelli & Bezerra', cnpj: '87654321000190', address: 'Rua Altamiro, 1051, Viçosa, MG', fda: '17405485860', email: 'vendas@rivelli.com', salesperson: 'Ana', phone: '31988887777' },
-        { id: 'sup_3', name: 'Supang Alimentos', cnpj: '11223344000155', address: 'Av. Jose Francisco, 55, Coronel Fabriciano, MG', fda: '11155427912', email: 'comercial@supang.com.br', salesperson: 'Mariana', phone: '31977776666' }
-    ];
-
-    items = [
-        { id: 'item_1', name: 'Fubá Mimoso', nameEn: 'Yellow Corn Meal', code: 'LP-001', ncm: '11022000', description: 'Fubá de milho amarelo para polenta e bolos.', quantity: 1500, minQuantity: 300, costPrice: 5.50, salePrice: 8.55, packageType: 'caixa', unitsPerPackage: 10, unitMeasureValue: 1, unitMeasureType: 'kg', supplierId: 'sup_1', image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'item_2', name: 'Tapioca (Vermelha)', nameEn: 'Tapioca Starch', code: 'LP-002', ncm: '19030000', description: 'Goma de tapioca para preparos rápidos.', quantity: 800, minQuantity: 200, costPrice: 7.20, salePrice: 9.65, packageType: 'caixa', unitsPerPackage: 10, unitMeasureValue: 1, unitMeasureType: 'kg', supplierId: 'sup_1', image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'item_3', name: 'Batata Palha Tradicional', nameEn: 'Potato Chips (Sticks)', code: 'RB-001', ncm: '20052000', description: 'Batata palha extra fina.', quantity: 900, minQuantity: 300, costPrice: 22.00, salePrice: 29.50, packageType: 'fardo', unitsPerPackage: 20, unitMeasureValue: 300, unitMeasureType: 'g', supplierId: 'sup_2', image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'item_4', name: 'Feijão Carioca', nameEn: 'Carioca Beans', code: 'SP-001', ncm: '07133399', description: 'Feijão carioca tipo 1.', quantity: 2000, minQuantity: 500, costPrice: 9.80, salePrice: 12.76, packageType: 'fardo', unitsPerPackage: 10, unitMeasureValue: 1, unitMeasureType: 'kg', supplierId: 'sup_3', image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'item_5', name: 'Polvilho Azedo', nameEn: 'Sour Starch', code: 'LP-003', ncm: '11081400', description: 'Polvilho azedo para pão de queijo.', quantity: 220, minQuantity: 200, costPrice: 8.00, salePrice: 10.45, packageType: 'caixa', unitsPerPackage: 10, unitMeasureValue: 1, unitMeasureType: 'kg', supplierId: 'sup_1', image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'item_6', name: 'Farofa Temperada', nameEn: 'Seasoned Cassava Flour', code: 'LP-004', ncm: '19019090', description: 'Farofa pronta para churrasco.', quantity: 144, minQuantity: 120, costPrice: 7.00, salePrice: 9.20, packageType: 'caixa', unitsPerPackage: 12, unitMeasureValue: 400, unitMeasureType: 'g', supplierId: 'sup_1', image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-    ];
-
-    movements = [
-        { id: 'mov_1', itemId: 'item_1', type: 'in', quantity: 1500, price: 5.50, reason: 'Entrada inicial', date: new Date().toISOString() },
-        { id: 'mov_2', itemId: 'item_2', type: 'in', quantity: 800, price: 7.20, reason: 'Entrada inicial', date: new Date().toISOString() },
-        { id: 'mov_3', itemId: 'item_3', type: 'in', quantity: 1000, price: 22.00, reason: 'Entrada inicial', date: new Date().toISOString() },
-        { id: 'mov_4', itemId: 'item_4', type: 'in', quantity: 2000, price: 9.80, reason: 'Entrada inicial', date: new Date().toISOString() },
-        { id: 'mov_5', itemId: 'item_5', type: 'in', quantity: 220, price: 8.00, reason: 'Entrada inicial', date: new Date().toISOString() },
-        { id: 'mov_6', itemId: 'item_6', type: 'in', quantity: 180, price: 7.00, reason: 'Entrada inicial', date: new Date().toISOString() },
-        { id: 'mov_7', itemId: 'item_3', type: 'out', quantity: 100, price: 29.50, reason: 'Saída por Operação', operationId: 'OP-1722880000000', date: new Date().toISOString() },
-        { id: 'mov_8', itemId: 'item_6', type: 'out', quantity: 36, price: 9.20, reason: 'Saída por Operação', operationId: 'OP-1722880000000', date: new Date().toISOString() }
-    ];
-
-    operationsHistory = [
-        {
-            id: 'OP-1722880000000',
-            date: new Date().toISOString(),
-            items: [
-                { ...items.find(i => i.id === 'item_3'), operationQuantity: 100, operationPrice: 29.50 },
-                { ...items.find(i => i.id === 'item_6'), operationQuantity: 36, operationPrice: 9.20 }
-            ]
-        }
-    ];
+/**
+ * Busca todos os fornecedores da base de dados.
+ * @returns {Array} - Uma lista de fornecedores.
+ */
+export async function getAllSuppliers() {
+    const { data, error } = await supabase.from('suppliers').select('*');
+    if (error) {
+        console.error('Erro ao buscar fornecedores:', error.message);
+        return [];
+    }
+    return data;
 }
+
+/**
+ * Busca todos os movimentos da base de dados.
+ * @returns {Array} - Uma lista de movimentos.
+ */
+export async function getAllMovements() {
+    const { data, error } = await supabase.from('movements').select('*');
+    if (error) {
+        console.error('Erro ao buscar movimentos:', error.message);
+        return [];
+    }
+    return data;
+}
+
+/**
+ * Busca todo o histórico de operações da base de dados.
+ * @returns {Array} - Uma lista de operações.
+ */
+export async function getAllOperationsHistory() {
+    const { data, error } = await supabase.from('operations_history').select('*');
+    if (error) {
+        console.error('Erro ao buscar histórico de operações:', error.message);
+        return [];
+    }
+    return data;
+}
+
+/**
+ * Busca todas as ordens de compra pendentes da base de dados.
+ * @returns {Array} - Uma lista de ordens de compra pendentes.
+ */
+export async function getAllPendingPurchaseOrders() {
+    const { data, error } = await supabase.from('pending_purchase_orders').select('*');
+    if (error) {
+        console.error('Erro ao buscar ordens de compra pendentes:', error.message);
+        return [];
+    }
+    return data;
+}
+
+/**
+ * Busca perfis de utilizador da base de dados.
+ * @returns {Array} - Uma lista de perfis de utilizador.
+ */
+export async function getUserProfiles() {
+    const { data, error } = await supabase.from('user_profiles').select('*');
+    if (error) {
+        console.error('Erro ao buscar perfis de utilizador:', error.message);
+        return [];
+    }
+    return data;
+}
+
+// --- Funções de Escrita/Manipulação de Dados ---
+
+/**
+ * Adiciona um novo item à base de dados.
+ * @param {Object} item - O objeto item a ser adicionado.
+ * @returns {Object|null} - O item adicionado ou null em caso de erro.
+ */
+export async function addItem(item) {
+    const { data, error } = await supabase.from('items').insert([item]).select();
+    if (error) {
+        console.error('Erro ao adicionar item:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Atualiza um item existente na base de dados.
+ * @param {string} id - O ID do item a ser atualizado.
+ * @param {Object} updates - Os campos a serem atualizados.
+ * @returns {Object|null} - O item atualizado ou null em caso de erro.
+ */
+export async function updateItem(id, updates) {
+    const { data, error } = await supabase.from('items').update(updates).eq('id', id).select();
+    if (error) {
+        console.error('Erro ao atualizar item:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Exclui um item da base de dados.
+ * @param {string} id - O ID do item a ser excluído.
+ * @returns {boolean} - True se a exclusão foi bem-sucedida, senão false.
+ */
+export async function deleteItem(id) {
+    const { error } = await supabase.from('items').delete().eq('id', id);
+    if (error) {
+        console.error('Erro ao excluir item:', error.message);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Adiciona um novo fornecedor à base de dados.
+ * @param {Object} supplier - O objeto fornecedor a ser adicionado.
+ * @returns {Object|null} - O fornecedor adicionado ou null em caso de erro.
+ */
+export async function addSupplier(supplier) {
+    const { data, error } = await supabase.from('suppliers').insert([supplier]).select();
+    if (error) {
+        console.error('Erro ao adicionar fornecedor:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Atualiza um fornecedor existente na base de dados.
+ * @param {string} id - O ID do fornecedor a ser atualizado.
+ * @param {Object} updates - Os campos a serem atualizados.
+ * @returns {Object|null} - O fornecedor atualizado ou null em caso de erro.
+ */
+export async function updateSupplier(id, updates) {
+    const { data, error } = await supabase.from('suppliers').update(updates).eq('id', id).select();
+    if (error) {
+        console.error('Erro ao atualizar fornecedor:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Exclui um fornecedor da base de dados.
+ * @param {string} id - O ID do fornecedor a ser excluído.
+ * @returns {boolean} - True se a exclusão foi bem-sucedida, senão false.
+ */
+export async function deleteSupplier(id) {
+    const { error } = await supabase.from('suppliers').delete().eq('id', id);
+    if (error) {
+        console.error('Erro ao excluir fornecedor:', error.message);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Adiciona um novo movimento à base de dados.
+ * @param {Object} movement - O objeto movimento a ser adicionado.
+ * @returns {Object|null} - O movimento adicionado ou null em caso de erro.
+ */
+export async function addMovement(movement) {
+    const { data, error } = await supabase.from('movements').insert([movement]).select();
+    if (error) {
+        console.error('Erro ao adicionar movimento:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Adiciona uma nova operação ao histórico.
+ * @param {Object} operation - O objeto operação a ser adicionado.
+ * @returns {Object|null} - A operação adicionada ou null em caso de erro.
+ */
+export async function addOperationToHistory(operation) {
+    const { data, error } = await supabase.from('operations_history').insert([operation]).select();
+    if (error) {
+        console.error('Erro ao adicionar operação ao histórico:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Adiciona uma nova ordem de compra pendente.
+ * @param {Object} po - O objeto ordem de compra a ser adicionado.
+ * @returns {Object|null} - A ordem de compra adicionada ou null em caso de erro.
+ */
+export async function addPendingPurchaseOrder(po) {
+    const { data, error } = await supabase.from('pending_purchase_orders').insert([po]).select();
+    if (error) {
+        console.error('Erro ao adicionar ordem de compra pendente:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Atualiza uma ordem de compra pendente existente.
+ * @param {string} id - O ID da ordem de compra a ser atualizada.
+ * @param {Object} updates - Os campos a serem atualizados.
+ * @returns {Object|null} - A ordem de compra atualizada ou null em caso de erro.
+ */
+export async function updatePendingPurchaseOrder(id, updates) {
+    const { data, error } = await supabase.from('pending_purchase_orders').update(updates).eq('id', id).select();
+    if (error) {
+        console.error('Erro ao atualizar ordem de compra pendente:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+/**
+ * Exclui uma ordem de compra pendente.
+ * @param {string} id - O ID da ordem de compra a ser excluída.
+ * @returns {boolean} - True se a exclusão foi bem-sucedida, senão false.
+ */
+export async function deletePendingPurchaseOrder(id) {
+    const { error } = await supabase.from('pending_purchase_orders').delete().eq('id', id);
+    if (error) {
+        console.error('Erro ao excluir ordem de compra pendente:', error.message);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Atualiza um perfil de utilizador existente.
+ * @param {string} id - O ID do perfil do utilizador a ser atualizado.
+ * @param {Object} updates - Os campos a serem atualizados.
+ * @returns {Object|null} - O perfil do utilizador atualizado ou null em caso de erro.
+ */
+export async function updateUserProfile(id, updates) {
+    const { data, error } = await supabase.from('user_profiles').update(updates).eq('id', id).select();
+    if (error) {
+        console.error('Erro ao atualizar perfil do utilizador:', error.message);
+        return null;
+    }
+    return data[0];
+}
+
+// --- Funções de Carregamento Inicial e Limpeza ---
+
+/**
+ * Carrega todos os dados iniciais da base de dados.
+ * Esta função é um ponto central para buscar todos os dados necessários na inicialização.
+ * @returns {Object} - Um objeto contendo todos os dados carregados.
+ */
+export async function loadAllData() {
+    const items = await getAllItems();
+    const suppliers = await getAllSuppliers();
+    const movements = await getAllMovements();
+    const operationsHistory = await getAllOperationsHistory();
+    const pendingPurchaseOrders = await getAllPendingPurchaseOrders();
+    const userProfiles = await getUserProfiles(); // Pode ser necessário para gerir permissões
+
+    return { items, suppliers, movements, operationsHistory, pendingPurchaseOrders, userProfiles };
+}
+
+/**
+ * Limpa todos os dados de todas as tabelas da base de dados.
+ * @returns {boolean} - True se a limpeza foi bem-sucedida, senão false.
+ */
+export async function clearAllData() {
+    // Exclui todos os registos de cada tabela.
+    // A ordem pode ser importante devido a chaves estrangeiras.
+    // Começamos pelas tabelas "filhas" (movements, operation_items) e depois as "pai".
+    const { error: movementsError } = await supabase.from('movements').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error: pendingPOError } = await supabase.from('pending_purchase_orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error: operationsError } = await supabase.from('operations_history').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error: itemsError } = await supabase.from('items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error: suppliersError } = await supabase.from('suppliers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error: userProfilesError } = await supabase.from('user_profiles').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+
+    if (itemsError || suppliersError || movementsError || operationsError || pendingPOError || userProfilesError) {
+        console.error('Erro ao limpar dados:', itemsError, suppliersError, movementsError, operationsError, pendingPOError, userProfilesError);
+        return false;
+    }
+    window.location.reload(); // Recarrega para refletir o estado vazio
+    return true;
+}
+
+// A função loadFictitiousData será tratada separadamente, pois envolve a inserção de dados.
+// Por enquanto, ela não será exportada ou usada diretamente aqui.
