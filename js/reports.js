@@ -143,6 +143,7 @@ function renderRankingList(containerId, data, label, formatter) {
         const item = appData.items.find(i => i.id === itemId); // Usa appData.items
         if (!item) return;
         const percentage = maxValue > 0 ? (value / maxValue * 100) : 0;
+        const formattedValue = formatter ? formatter(itemId, value) : value;
         const div = document.createElement('div');
         div.className = 'ranking-item';
         div.innerHTML = `
