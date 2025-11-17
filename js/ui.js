@@ -576,8 +576,28 @@ export async function renderSuppliersList() {
                 <span class="supplier-name">${s.name}</span>
                 <p class="supplier-meta">${s.email || ''}</p>
             </div>
-            <button onclick="deleteSupplier('${s.id}', event)" class="btn-delete-supplier"><i data-feather="trash-2"></i></button>
-        `;
+        const deleteBtn = div.querySelector('.btn-delete-supplier');
+        deleteBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const supplierToDelete = appData.suppliers.find(sup => sup.id === s.id);
+            if (!supplierToDelete) return;
+
+            showConfirmModal(
+                'Excluir Fornecedor?',
+                `Tem a certeza de que deseja excluir o fornecedor "${supplierToDelete.name}"?`,
+                async () => {
+                    const success = await deleteSupplier(s.id); // Chama a função importada de database.js
+                    if (success) {
+                        showNotification('Fornecedor excluído!', 'danger');
+                        await fullUpdate();
+                        await renderSuppliersList();
+                        resetSupplierForm();
+                    } else {
+                        showNotification('Erro ao excluir fornecedor!', 'danger');
+                    }
+                }
+            );
+        });
         suppliersListContainer.appendChild(div);
     });
     feather.replace();
@@ -605,28 +625,9 @@ export function resetSupplierForm() {
     document.getElementById('supplier-form-title').innerText = "Adicionar Novo Fornecedor";
 }
 
-export async function deleteSupplier(id, event) { // Adicionado async aqui
-    event.stopPropagation();
-    const supplierToDelete = appData.suppliers.find(s => s.id === id); // Usa appData.suppliers
-    if (!supplierToDelete) return;
+// A função deleteSupplier agora é importada de database.js e usada diretamente.
+// A lógica de confirmação foi movida para o event listener em renderSuppliersList.
 
-    showConfirmModal(
-        'Excluir Fornecedor?', 
-        `Tem a certeza de que deseja excluir o fornecedor "${supplierToDelete.name}"?`, 
-        async () => { // Adicionado async aqui
-            const success = await deleteSupplier(id); // Chama a função do Supabase
-            if (success) {
-                showNotification('Fornecedor excluído!', 'danger');
-                await fullUpdate(); // Espera a atualização completa
-                await renderSuppliersList(); // Espera a renderização
-                resetSupplierForm();
-            } else {
-                showNotification('Erro ao excluir fornecedor!', 'danger');
-            }
-        }
-    );
-}
-window.deleteSupplier = deleteSupplier;
 
 export async function openStockModal(id) {
     const item = appData.items.find(i => i.id === id); // Usa appData.items
