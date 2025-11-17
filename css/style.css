@@ -1036,7 +1036,6 @@ body.modal-is-open {
     z-index: 40;
     overflow: hidden;
     padding: 0.5rem;
-    display: block; /* Controlled by .hidden */
 }
 
 .dropdown-menu.hidden {
