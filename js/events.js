@@ -78,6 +78,7 @@ export function initializeEventListeners() {
             console.log('Button open status after toggle:', !isHidden);
         });
 
+        /*
         // Click outside to close
         document.addEventListener('click', (e) => {
             if (!desktopOperationsBtn.contains(e.target) && !operationsDropdown.contains(e.target)) {
@@ -86,6 +87,7 @@ export function initializeEventListeners() {
                 console.log('Clicked outside, dropdown closed.');
             }
         });
+        */
     }
 
     const closeDropdown = () => {
