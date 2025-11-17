@@ -3,7 +3,8 @@ import {
     getAllItems, getAllSuppliers, getAllMovements, getAllOperationsHistory, getAllPendingPurchaseOrders, getUserProfiles,
     addItem, updateItem, deleteItem, addSupplier, updateSupplier, deleteSupplier, addMovement, addOperationToHistory,
     addPendingPurchaseOrder, updatePendingPurchaseOrder, deletePendingPurchaseOrder,
-    clearAllData
+    clearAllData,
+    loadAllData
 } from './database.js';
 import { appData } from './main.js'; // Importa a variável global de dados
 

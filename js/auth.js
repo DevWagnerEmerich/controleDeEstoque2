@@ -62,6 +62,7 @@ export async function fetchUserProfile(userId) {
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
+        .limit(1)
         .single();
 
     if (error) {
