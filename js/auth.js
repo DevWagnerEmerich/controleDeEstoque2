@@ -60,18 +60,16 @@ export async function handleLogout() {
 export async function fetchUserProfile(userId) {
     const { data, error } = await supabase
         .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .limit(1)
-        .single();
-
-    if (error) {
-        console.error('Erro ao buscar perfil do utilizador:', error.message);
-        currentUserProfile = null;
-    }
-    else {
-        currentUserProfile = data;
-    }
+                .select('*')
+                .eq('id', userId)
+                .limit(1);
+        
+            if (error) {
+                console.error('Erro ao buscar perfil do utilizador:', error.message);
+                currentUserProfile = null;
+            } else {
+                currentUserProfile = data && data.length > 0 ? data[0] : null;
+            }
 }
 
 /**
