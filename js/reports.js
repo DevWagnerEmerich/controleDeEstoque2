@@ -214,5 +214,3 @@ export function renderDailyMovementsReport() {
     });
     feather.replace();
 }
-
-export { openReportsModal, switchReportTab };

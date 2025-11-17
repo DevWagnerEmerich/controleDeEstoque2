@@ -576,6 +576,9 @@ export async function renderSuppliersList() {
                 <span class="supplier-name">${s.name}</span>
                 <p class="supplier-meta">${s.email || ''}</p>
             </div>
+            <button class="btn-delete-supplier"><i data-feather="trash-2"></i></button>
+        `;
+
         const deleteBtn = div.querySelector('.btn-delete-supplier');
         deleteBtn.addEventListener('click', (event) => {
             event.stopPropagation();
@@ -598,6 +601,7 @@ export async function renderSuppliersList() {
                 }
             );
         });
+        
         suppliersListContainer.appendChild(div);
     });
     feather.replace();
@@ -617,7 +621,7 @@ export function editSupplier(id) {
     document.getElementById('supplierSalesperson').value = supplier.salesperson;
     document.getElementById('supplierPhone').value = formatPhone(supplier.phone);
 }
-window.editSupplier = editSupplier;
+
 
 export function resetSupplierForm() {
     document.getElementById('supplier-form').reset();
@@ -813,7 +817,7 @@ export function editUser(userId) {
         el.checked = user.permissions && user.permissions[permKey] || false;
     });
 }
-window.editUser = editUser;
+
 
 export function resetUserForm() {
     document.getElementById('user-form').reset();
@@ -854,7 +858,7 @@ export async function deleteUser(userId, event) { // Adicionado async aqui
         }
     );
 }
-window.deleteUser = deleteUser;
+
 
 export async function renderOperationsHistory() {
     const container = document.getElementById('operations-history-list');
