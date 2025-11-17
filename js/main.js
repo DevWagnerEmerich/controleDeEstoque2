@@ -26,6 +26,8 @@ let stagedItems = [];
 
 document.addEventListener('DOMContentLoaded', async () => { // Adicionado 'async' aqui
 
+    initializeEventListeners();
+
     const isAuthenticated = await initializeAuth(); // Espera a autenticação
 
     if (isAuthenticated) {
