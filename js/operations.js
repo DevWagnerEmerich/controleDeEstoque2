@@ -77,15 +77,45 @@ function renderOperationAvailableItems() {
                     <label>Preço Venda</label>
                     <input type="number" id="op-price-${item.id}" class="form-input" step="0.01" value="${item.sale_price}">
                 </div>
-                <button onclick="addItemToOperation('${item.id}')" class="btn btn-add-op" id="add-op-btn-${item.id}">Adicionar</button>
+                <button class="btn btn-add-op" id="add-op-btn-${item.id}">Adicionar</button>
             </div>
         `;
+        div.querySelector('.btn-add-op').addEventListener('click', () => addItemToOperation(item.id));
         container.appendChild(div);
     });
     feather.replace();
 }
 
 async function addItemToOperation(itemId) {
+    const item = { ...appData.items.find(i => i.id === itemId) }; // Usa appData.items
+    const qtyBoxInput = document.getElementById(`op-qty-box-${itemId}`);
+    const priceInput = document.getElementById(`op-price-${itemId}`);
+    
+    const quantityInBoxes = parseInt(qtyBoxInput.value);
+    const price = parseFloat(priceInput.value);
+
+    if (!quantityInBoxes || quantityInBoxes <= 0) {
+        showNotification("Por favor, insira uma quantidade válida.", "warning");
+        return;
+    }
+    
+    const quantityInUnits = quantityInBoxes * (item.units_per_package || 1); // Ajustado para units_per_package
+
+    if (quantityInUnits > item.quantity) {
+        showNotification("A quantidade de saída não pode ser maior que o stock disponível.", "warning");
+        return;
+    }
+
+    currentOperation.items.push({
+        ...item,
+        operationQuantity: quantityInUnits,
+        operationPrice: price
+    });
+
+    renderOperationSelectedItems();
+    renderOperationAvailableItems();
+    updateOperationSummary();
+}
 
 function renderOperationSelectedItems() {
     const container = document.getElementById('operation-selected-items');
@@ -109,16 +139,22 @@ function renderOperationSelectedItems() {
                 <p class="op-item-name">${item.name}</p>
                 <p class="op-item-stock">A sair: ${selectedDisplay} @ ${formatCurrency(item.operationPrice, 'BRL')}</p>
             </div>
-            <button onclick="removeItemFromOperation('${item.id}')" class="btn-remove-op">
+            <button class="btn-remove-op">
                 <i data-feather="x"></i>
             </button>
         `;
+        div.querySelector('.btn-remove-op').addEventListener('click', () => removeItemFromOperation(item.id));
         container.appendChild(div);
     });
     feather.replace();
 }
 
 function removeItemFromOperation(itemId) {
+    currentOperation.items = currentOperation.items.filter(item => item.id !== itemId);
+    renderOperationSelectedItems();
+    renderOperationAvailableItems();
+    updateOperationSummary();
+}
 
 function updateOperationSummary() {
     const summaryContainer = document.getElementById('operation-summary');

@@ -124,6 +124,12 @@ function renderSimulationSelectedItems() {
 }
 
 function removeItemFromSimulation(itemId) {
+    currentSimulation.items = currentSimulation.items.filter(simItem => simItem.id !== itemId);
+    showNotification(`Item removido da simulação.`, 'info');
+    renderSimulationSelectedItems();
+    renderSimulationAvailableItems();
+    autoSaveSimulation();
+}
 
 function renderSimulationAvailableItems() {
     const container = document.getElementById('sim-available-items');
@@ -215,6 +221,40 @@ function calculateSimulationItemQtyUnit(prod, supplier, allItems) {
 }
 
 function addItemToSimulation(itemId) {
+    // Garante que a lista de itens da simulação existe para evitar erros
+    if (!Array.isArray(currentSimulation.items)) {
+        currentSimulation.items = [];
+    }
+
+    const item = { ...appData.items.find(i => i.id === itemId) }; // Usa appData.items
+    const supplier = appData.suppliers.find(s => s.id === item.supplier_id); // Usa appData.suppliers e supplier_id
+    const calculatedQtyUnit = calculateSimulationItemQtyUnit(item, supplier, appData.items); // Usa appData.items
+
+    const quantity = 1; // Quantity is always 1 in the simulation phase
+
+    const existingSimItem = currentSimulation.items.find(simItem => simItem.id === itemId);
+    if (existingSimItem) {
+        existingSimItem.operationQuantity = quantity;
+        showNotification(`Quantidade de ${item.name} atualizada para ${quantity}.`, 'info');
+    } else {
+        currentSimulation.items.push({
+            ...item,
+            operationQuantity: quantity,
+            operationPrice: item.sale_price || item.cost_price || 0, // Usa preço de venda ou custo
+            qtyUnit: calculatedQtyUnit // Adiciona o qtyUnit calculado
+        });
+        showNotification(`${item.name} adicionado à simulação.`, 'success');
+    }
+
+    // Habilita os botões de ação se a simulação deixar de estar vazia
+    if (currentSimulation.items.length > 0) {
+        toggleSimulationActionButtons(true);
+    }
+
+    renderSimulationSelectedItems();
+    renderSimulationAvailableItems();
+    autoSaveSimulation();
+}
 
 export async function openSimAddItemModal() { // Adicionado async aqui
     const supplierSelect = document.getElementById('simItemSupplier');
