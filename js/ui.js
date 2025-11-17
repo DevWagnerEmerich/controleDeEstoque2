@@ -1093,10 +1093,4 @@ export async function deleteOperation(operationId) { // Adicionado async aqui
 }
 window.deleteOperation = deleteOperation;
 
-export { 
-    applyPermissionsToUI, fullUpdate, openModal, closeModal, 
-    showConfirmModal, openItemModal, openSuppliersModal, openStockModal, 
-    showNotification, openUsersModal, openItemDetailsModal, renderItems,
-    previewImage, resetSupplierForm, resetUserForm, renderOperationsHistory,
-    showView, formatCurrency, getStatus, renderOperationsHistoryModal, openOperationsHistoryModal
-};
+// O bloco de exportação nomeado foi removido pois todas as funções já são exportadas individualmente.
