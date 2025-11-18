@@ -232,7 +232,7 @@ export function openModal(id) {
     const modal = document.getElementById(id);
     if (modal) {
         document.body.classList.add('modal-is-open');
-        modal.classList.add('is-open');
+        modal.style.display = 'flex'; // Correção: Força a exibição do modal
         feather.replace();
     }
 }
@@ -241,7 +241,7 @@ export function closeModal(id) {
     const modal = document.getElementById(id);
     if (modal) {
         document.body.classList.remove('modal-is-open');
-        modal.classList.remove('is-open');
+        modal.style.display = 'none'; // Correção: Força o modal a ser escondido
 
         // Limpa o hash da URL para evitar que o modal de histórico seja reaberto
         history.pushState("", document.title, window.location.pathname + window.location.search);
