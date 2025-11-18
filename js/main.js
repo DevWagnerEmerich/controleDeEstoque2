@@ -1,45 +1,28 @@
-import { initializeAuth, handleLogout, checkPermission, currentUserProfile } from './auth.js';
-import { loadAllData, clearAllData, getAllSuppliers, getAllItems } from './database.js'; // Novas importações
+import { initializeAuth, handleLogout, checkPermission } from './auth.js';
+import { loadDataAndRenderApp, saveData, items, operationsHistory, suppliers } from './database.js';
 import { openReportsModal } from './reports.js';
 import { finalizarOperacaoDeImportacao, regenerateDocument } from './operations.js';
 import { 
-    applyPermissionsToUI, fullUpdate, showView, showNotification, openModal, closeModal, openOperationsHistoryModal, renderItems
+    applyPermissionsToUI, fullUpdate, showView, showNotification, openModal, closeModal, openOperationsHistoryModal
 } from './ui.js';
 import { initializeEventListeners } from './events.js';
 import { openSimulationModal, resumeSimulation } from './simulation.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
 
-// Variáveis de estado globais para os dados da aplicação
-// Serão populadas após o carregamento do Supabase
-export let appData = {
-    items: [],
-    suppliers: [],
-    movements: [],
-    operationsHistory: [],
-    pendingPurchaseOrders: [],
-    userProfiles: []
-};
+// --- Variáveis de Estado para o Novo Fluxo de Extração ---
+let stagedNfeData = []; // Array para guardar dados de múltiplas NF-e
+let stagedItems = []; // Array para guardar os itens acumulados
 
-// --- Variáveis de Estado para o Novo Fluxo de Extração (temporariamente mantidas) ---
-let stagedNfeData = [];
-let stagedItems = [];
+document.addEventListener('DOMContentLoaded', () => {
 
-document.addEventListener('DOMContentLoaded', async () => { // Adicionado 'async' aqui
+    loadDataAndRenderApp();
 
-    initializeEventListeners();
+    if (initializeAuth()) {
 
-    const isAuthenticated = await initializeAuth(); // Espera a autenticação
-
-    if (isAuthenticated) {
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('app-container').classList.remove('hidden');
-        
-        // Carrega todos os dados da base de dados Supabase
-        const loadedData = await loadAllData();
-        Object.assign(appData, loadedData); // Popula a variável global appData
-
         applyPermissionsToUI();
-        fullUpdate(); // fullUpdate precisará ser adaptado para usar appData
+        fullUpdate();
 
         // Handle hash-based navigation and session-based state restoration
         const hash = window.location.hash;
@@ -48,7 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => { // Adicionado 'async
         if (simReturnData) {
             sessionStorage.removeItem('simulationReturnData');
             const simulationData = JSON.parse(simReturnData);
-            resumeSimulation(simulationData); // resumeSimulation precisará ser adaptado
+            resumeSimulation(simulationData);
         } else if (hash.includes('#operations-history')) {
             openOperationsHistoryModal();
         } else if (hash.includes('#purchase-orders')) {
@@ -83,15 +66,32 @@ document.addEventListener('DOMContentLoaded', async () => { // Adicionado 'async
         }
     });
 
-    // Adiciona o listener para o upload de XML (temporariamente mantido, mas será refatorado)
+
+
+    // Adiciona o listener para o upload de XML, que estava ausente
     document.getElementById('xml-upload-main').addEventListener('change', handleXmlUpload);
 
-    // Remove o listener de 'storage' que não é mais necessário com Supabase
-    // window.addEventListener('storage', (...) => { ... });
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'currentDocument') {
+            const documentDataString = event.newValue;
+            if (documentDataString) {
+                const documentData = JSON.parse(documentDataString);
+                const operationId = documentData.operation.id;
+                const opIndex = operationsHistory.findIndex(op => op.id === operationId);
+                if (opIndex > -1) {
+                    const originalDate = operationsHistory[opIndex].date;
+                    operationsHistory[opIndex] = documentData.operation;
+                    operationsHistory[opIndex].date = originalDate; // Keep original date
+                    saveData();
+                    showNotification(`Operação ${operationId} atualizada.`, 'info');
+                }
+            }
+        }
+    });
 });
 
 // --- Nova Lógica de Extração de XML (Frontend envia para Backend) --- //
-// Esta função será refatorada na Parte 3 para usar o backend Python na Vercel
+
 async function handleXmlUpload(event) {
     if (!checkPermission('import')) {
         showNotification('Não tem permissão para importar ficheiros.', 'danger');
@@ -107,11 +107,13 @@ async function handleXmlUpload(event) {
     formData.append('file', file);
 
     try {
-        // Esta URL será substituída pela URL da sua Serverless Function na Vercel
+        // Substitua pela URL do seu backend se for diferente
         const response = await fetch('http://localhost:8001/upload/', {
             method: 'POST',
             headers: {
-                'Authorization': 'secret' // ATENÇÃO: Isso será removido/segurizado
+                // A chave de API precisa ser gerenciada de forma segura
+                // Por agora, vamos assumir que ela está disponível ou não é estritamente necessária para o desenvolvimento local
+                'Authorization': 'secret' // ATENÇÃO: Usar uma chave fixa no código não é seguro para produção
             },
             body: formData
         });
@@ -138,26 +140,29 @@ async function handleXmlUpload(event) {
     }
 }
 
-// Esta função será refatorada na Parte 3
+
 function showExtractionMenu(data) {
-    // A lógica de busca de fornecedor e itens existentes precisará ser adaptada para usar getAllSuppliers e getAllItems
-    const supplier = appData.suppliers.find(s => s.cnpj === data.fornecedor.cnpj); // Usando appData.suppliers
+    // Implementa a lógica A-B-C para o campo QTY UNIT
+    const supplier = suppliers.find(s => s.cnpj === data.fornecedor.cnpj);
 
     data.produtos.forEach(prod => {
         let qtyUnit = null;
 
+        // Plano A: Extrair padrão de pacote da descrição do XML (ex: 12X500)
         const packageMatch = (prod.name.match(/(\d+\s*[xX]\s*\d+)/) || [])[0];
         if (packageMatch) {
             qtyUnit = packageMatch.toUpperCase().replace(" ", "");
         }
 
+        // Plano B: Se o Plano A falhar, buscar no estoque
         if (!qtyUnit && supplier) {
-            const existingItem = appData.items.find(item => item.code === prod.code && item.supplierId === supplier.id); // Usando appData.items
+            const existingItem = items.find(item => item.code === prod.code && item.supplierId === supplier.id);
             if (existingItem && existingItem.unitsPerPackage > 0 && existingItem.unitMeasureValue > 0) {
                 qtyUnit = `${existingItem.unitsPerPackage}X${existingItem.unitMeasureValue}`;
             }
         }
 
+        // Plano C: Se A e B falharem, extrair padrão de item único da descrição (ex: 400)
         if (!qtyUnit) {
             const singleItemMatch = (prod.name.match(/(\d+)\s*(?:G|GR|KG)/i) || [])[1];
             if (singleItemMatch) {
@@ -165,6 +170,7 @@ function showExtractionMenu(data) {
             }
         }
 
+        // Atribui o valor encontrado (ou string vazia) ao produto
         prod.qtyUnit = qtyUnit || '';
     });
 
@@ -198,8 +204,7 @@ function clearStagedData() {
     stagedItems = [];
 }
 
-// Esta função será refatorada na Parte 3
-async function handlePerformOperation() {
+function handlePerformOperation() {
     if (stagedItems.length === 0) {
         showNotification('Nenhum item carregado para realizar a operação.', 'warning');
         return;
@@ -207,26 +212,24 @@ async function handlePerformOperation() {
 
     const operationId = `OP-${Date.now()}`;
     const newOperation = {
-        operation_id: operationId, // Usar operation_id para corresponder ao esquema do BD
+        id: operationId,
+        invoiceNumber: operationId.replace('OP-', ''), // Initialize invoiceNumber
         date: new Date().toISOString(),
-        items: stagedItems, // stagedItems já é um array
-        nfe_data: stagedNfeData, // stagedNfeData já é um array
+        items: [...stagedItems],
+        nfeData: [...stagedNfeData],
         type: 'import'
     };
 
-    // Aqui você precisará chamar addOperationToHistory do database.js
-    // const addedOperation = await addOperationToHistory(newOperation);
-    // if (addedOperation) { ... }
-
-    // Temporariamente, vamos apenas simular o sucesso
-    showNotification(`Operação ${newOperation.operation_id} criada com sucesso! (Simulado)`, 'success');
+    operationsHistory.push(newOperation);
 
     // Processa a entrada e saída dos itens no estoque e cria os movimentos
-    // finalizarOperacaoDeImportacao(stagedNfeData, newOperation.operation_id); // Isso também precisará ser adaptado
+    finalizarOperacaoDeImportacao(stagedNfeData, newOperation.id);
 
+    saveData();
     clearStagedData();
     closeModal('extraction-menu-modal');
-    
+    showNotification(`Operação ${newOperation.id} criada com sucesso!`, 'success');
+
     // Abre o histórico de operações para o usuário ver o resultado
-    // regenerateDocument(newOperation.operation_id, 'invoice'); // Isso também precisará ser adaptado
+    regenerateDocument(newOperation.id, 'invoice');
 }

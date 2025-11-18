@@ -2,3 +2,8 @@ fastapi
 uvicorn
 python-multipart
 lxml
+sqlalchemy
+psycopg2-binary
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]

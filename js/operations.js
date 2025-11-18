@@ -1,14 +1,10 @@
-import { 
-    addItem, updateItem, deleteItem, addSupplier, updateSupplier, addMovement, addOperationToHistory,
-    addPendingPurchaseOrder, updatePendingPurchaseOrder, deletePendingPurchaseOrder
-} from './database.js';
-import { showNotification, openModal, closeModal, formatCurrency, fullUpdate, normalizeCnpj } from './ui.js';
+import { items, suppliers, operationsHistory, movements, saveData, pendingPurchaseOrders } from './database.js';
+import { showNotification, openModal, closeModal, formatCurrency, fullUpdate, normalizeCnpj } from './ui.js'; // Added normalizeCnpj
 import { checkPermission } from './auth.js';
-import { appData } from './main.js'; // Importa a variável global de dados
 
 let currentOperation = { id: null, items: [], isEditing: false };
 
-export function openOperationModal(itensPreenchidos = null) {
+function openOperationModal(itensPreenchidos = null) {
     if (!checkPermission('operation')) {
         showNotification('Não tem permissão para criar operações.', 'danger');
         return;
@@ -23,7 +19,7 @@ export function openOperationModal(itensPreenchidos = null) {
     if (itensPreenchidos && Array.isArray(itensPreenchidos)) {
         document.getElementById('operation-modal-title').innerText = 'Nova Operação (Itens Importados)';
         itensPreenchidos.forEach(prodImportado => {
-            const itemDeEstoque = appData.items.find(i => i.code === prodImportado.code); // Usa appData.items
+            const itemDeEstoque = items.find(i => i.code === prodImportado.code);
             if (itemDeEstoque) {
                 currentOperation.items.push({
                     ...itemDeEstoque,
@@ -46,7 +42,7 @@ export function openOperationModal(itensPreenchidos = null) {
 function renderOperationAvailableItems() {
     const container = document.getElementById('operation-available-items');
     container.innerHTML = '';
-    const availableItems = appData.items.filter(item => item.quantity > 0); // Usa appData.items
+    const availableItems = items.filter(item => item.quantity > 0);
 
     if (availableItems.length === 0) {
         container.innerHTML = `<p class="text-secondary text-center">Nenhum item com stock disponível.</p>`;
@@ -58,10 +54,10 @@ function renderOperationAvailableItems() {
         const div = document.createElement('div');
         div.className = `op-item-card available ${isAdded ? 'added' : ''}`;
 
-        const boxesInStock = (item.units_per_package > 0) ? Math.floor(item.quantity / item.units_per_package) : 0; // Ajustado para units_per_package
-        const packageLabel = item.package_type === 'fardo' ? (boxesInStock === 1 ? 'fardo' : 'fardos') : (boxesInStock === 1 ? 'caixa' : 'caixas'); // Ajustado para package_type
+        const boxesInStock = (item.unitsPerPackage > 0) ? Math.floor(item.quantity / item.unitsPerPackage) : 0;
+        const packageLabel = item.packageType === 'fardo' ? (boxesInStock === 1 ? 'fardo' : 'fardos') : (boxesInStock === 1 ? 'caixa' : 'caixas');
         const stockDisplay = `${boxesInStock} ${packageLabel}`;
-        const inputPackageLabel = item.package_type === 'fardo' ? 'Fardos' : 'Caixas'; // Ajustado para package_type
+        const inputPackageLabel = item.packageType === 'fardo' ? 'Fardos' : 'Caixas';
 
         div.innerHTML = `
             <div class="op-item-info">
@@ -75,19 +71,18 @@ function renderOperationAvailableItems() {
                 </div>
                 <div class="input-group">
                     <label>Preço Venda</label>
-                    <input type="number" id="op-price-${item.id}" class="form-input" step="0.01" value="${item.sale_price}">
+                    <input type="number" id="op-price-${item.id}" class="form-input" step="0.01" value="${item.salePrice}">
                 </div>
-                <button class="btn btn-add-op" id="add-op-btn-${item.id}">Adicionar</button>
+                <button onclick="addItemToOperation('${item.id}')" class="btn btn-add-op" id="add-op-btn-${item.id}">Adicionar</button>
             </div>
         `;
-        div.querySelector('.btn-add-op').addEventListener('click', () => addItemToOperation(item.id));
         container.appendChild(div);
     });
     feather.replace();
 }
 
-async function addItemToOperation(itemId) {
-    const item = { ...appData.items.find(i => i.id === itemId) }; // Usa appData.items
+function addItemToOperation(itemId) {
+    const item = { ...items.find(i => i.id === itemId) };
     const qtyBoxInput = document.getElementById(`op-qty-box-${itemId}`);
     const priceInput = document.getElementById(`op-price-${itemId}`);
     
@@ -99,7 +94,7 @@ async function addItemToOperation(itemId) {
         return;
     }
     
-    const quantityInUnits = quantityInBoxes * (item.units_per_package || 1); // Ajustado para units_per_package
+    const quantityInUnits = quantityInBoxes * (item.unitsPerPackage || 1);
 
     if (quantityInUnits > item.quantity) {
         showNotification("A quantidade de saída não pode ser maior que o stock disponível.", "warning");
@@ -116,6 +111,7 @@ async function addItemToOperation(itemId) {
     renderOperationAvailableItems();
     updateOperationSummary();
 }
+window.addItemToOperation = addItemToOperation;
 
 function renderOperationSelectedItems() {
     const container = document.getElementById('operation-selected-items');
@@ -130,8 +126,8 @@ function renderOperationSelectedItems() {
         const div = document.createElement('div');
         div.className = 'op-item-card selected';
         
-        const boxes = (item.units_per_package > 0) ? Math.floor(item.operationQuantity / item.units_per_package) : 0; // Ajustado para units_per_package
-        const packageLabel = item.package_type === 'fardo' ? (boxes === 1 ? 'fardo' : 'fardos') : (boxes === 1 ? 'caixa' : 'caixas'); // Ajustado para package_type
+        const boxes = (item.unitsPerPackage > 0) ? Math.floor(item.operationQuantity / item.unitsPerPackage) : 0;
+        const packageLabel = item.packageType === 'fardo' ? (boxes === 1 ? 'fardo' : 'fardos') : (boxes === 1 ? 'caixa' : 'caixas');
         const selectedDisplay = `${boxes} ${packageLabel}`;
 
         div.innerHTML = `
@@ -139,11 +135,10 @@ function renderOperationSelectedItems() {
                 <p class="op-item-name">${item.name}</p>
                 <p class="op-item-stock">A sair: ${selectedDisplay} @ ${formatCurrency(item.operationPrice, 'BRL')}</p>
             </div>
-            <button class="btn-remove-op">
+            <button onclick="removeItemFromOperation('${item.id}')" class="btn-remove-op">
                 <i data-feather="x"></i>
             </button>
         `;
-        div.querySelector('.btn-remove-op').addEventListener('click', () => removeItemFromOperation(item.id));
         container.appendChild(div);
     });
     feather.replace();
@@ -155,6 +150,7 @@ function removeItemFromOperation(itemId) {
     renderOperationAvailableItems();
     updateOperationSummary();
 }
+window.removeItemFromOperation = removeItemFromOperation;
 
 function updateOperationSummary() {
     const summaryContainer = document.getElementById('operation-summary');
@@ -168,11 +164,11 @@ function updateOperationSummary() {
     let totalAmount = 0;
 
     currentOperation.items.forEach(item => {
-        const boxes = (item.units_per_package > 0) ? Math.floor(item.operationQuantity / item.units_per_package) : 0; // Ajustado para units_per_package
+        const boxes = (item.unitsPerPackage > 0) ? Math.floor(item.operationQuantity / item.unitsPerPackage) : 0;
         totalBoxes += boxes;
 
-        let itemNetWeight = item.operationQuantity * (item.unit_measure_value || 0); // Ajustado para unit_measure_value
-        if (item.unit_measure_type === 'g' || item.unit_measure_type === 'ml') { // Ajustado para unit_measure_type
+        let itemNetWeight = item.operationQuantity * (item.unitMeasureValue || 0);
+        if (item.unitMeasureType === 'g' || item.unitMeasureType === 'ml') {
             itemNetWeight /= 1000;
         }
         totalNetWeight += itemNetWeight;
@@ -201,7 +197,7 @@ function updateOperationSummary() {
     `;
 }
 
-export async function saveManualOperation() { // Adicionado async aqui
+function saveManualOperation() {
     if (currentOperation.items.length === 0) {
         showNotification("Adicione pelo menos um item à operação antes de finalizar.", 'warning');
         return;
@@ -209,166 +205,153 @@ export async function saveManualOperation() { // Adicionado async aqui
 
     // Cria uma cópia segura da operação para salvar
     const operationToSave = {
-        operation_id: currentOperation.id, // Usar operation_id para corresponder ao esquema do BD
-        date: currentOperation.date,
-        items: currentOperation.items.map(item => ({ // Mapeia para remover propriedades desnecessárias e ajustar nomes
-            id: item.id,
-            name: item.name,
-            code: item.code,
-            quantity: item.operationQuantity,
-            price: item.operationPrice
-        })),
+        ...currentOperation,
+        items: JSON.parse(JSON.stringify(currentOperation.items)), // Garante uma cópia profunda
         type: 'manual'
     };
 
-    const addedOperation = await addOperationToHistory(operationToSave); // Salva a operação no Supabase
-    if (!addedOperation) {
-        showNotification('Erro ao salvar operação!', 'danger');
-        return;
-    }
+    // Salva a operação no histórico
+    operationsHistory.push(operationToSave);
+    saveData(); // Salva os dados imediatamente
 
-    showNotification(`Operação ${addedOperation.operation_id} criada com sucesso!`, 'success');
+    showNotification(`Operação ${operationToSave.id} criada com sucesso!`, 'success');
 
     // Atualiza o stock e cria os registos de movimento
-    for (const opItem of currentOperation.items) { // Usar for...of para await
-        const itemToUpdate = appData.items.find(i => i.id === opItem.id); // Usa appData.items
-        if (itemToUpdate) {
-            const newQuantity = itemToUpdate.quantity - opItem.operationQuantity;
-            const updatedItem = await updateItem(itemToUpdate.id, { quantity: newQuantity, updated_at: new Date().toISOString() }); // Atualiza no Supabase
-            if (!updatedItem) {
-                showNotification(`Erro ao atualizar stock do item ${itemToUpdate.name}!`, 'danger');
-                return;
-            }
+    currentOperation.items.forEach(opItem => {
+        const itemIndex = items.findIndex(i => i.id === opItem.id);
+        if (itemIndex > -1) {
+            items[itemIndex].quantity -= opItem.operationQuantity;
         }
         const movement = {
-            item_id: opItem.id, // Ajustado para item_id
-            type: 'out',
-            quantity: opItem.operationQuantity,
-            price: opItem.operationPrice,
-            reason: `Saída por Operação`,
-            operation_id: addedOperation.id, // Link para a operação recém-criada
-            created_at: new Date().toISOString()
+            id: `mov_${Date.now()}_${opItem.id}`,
+            itemId: opItem.id, type: 'out', quantity: opItem.operationQuantity,
+            price: opItem.operationPrice, reason: `Saída por Operação`,
+            operationId: currentOperation.id, date: currentOperation.date
         };
-        const newMovement = await addMovement(movement); // Adiciona movimento no Supabase
-        if (!newMovement) {
-            showNotification(`Erro ao registar movimento para o item ${opItem.name}!`, 'danger');
-            return;
-        }
-    }
+        movements.push(movement);
+    });
     
     closeModal('operation-modal');
-    await fullUpdate(); // Atualiza a UI
+    fullUpdate(); // Atualiza a UI
+
+    // Dispara um evento para notificar que a operação foi salva
     document.dispatchEvent(new CustomEvent('operation-saved'));
 }
 
-export function regenerateDocument(operationId, docType) {
-    // Esta função precisará ser adaptada para buscar dados do Supabase
-    // e não usar localStorage.setItem
-    showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+function regenerateDocument(operationId, docType) {
+    const operationData = operationsHistory.find(op => op.id === operationId);
+    if (!operationData) {
+        showNotification('Operação não encontrada no histórico.', 'danger');
+        return;
+    }
+
+    const dataForDocument = {
+        operation: operationData,
+        allSuppliers: suppliers 
+    };
+
+    if (docType === 'invoice') {
+        localStorage.setItem('currentDocument', JSON.stringify(dataForDocument));
+        window.open('gerenciador_invoice.html', '_self');
+
+    } else if (docType === 'packlist') {
+        localStorage.setItem('currentDocument', JSON.stringify(dataForDocument));
+        window.open('gerador_packing_list.html', '_self');
+    }
 }
 window.regenerateDocument = regenerateDocument;
 
-export async function finalizarOperacaoDeImportacao(stagedNfeData, operationId) { // Adicionado async aqui
-    for (const nfe of stagedNfeData) { // Usar for...of para await
+function finalizarOperacaoDeImportacao(stagedNfeData, operationId) {
+    stagedNfeData.forEach(nfe => {
         const { fornecedor, produtos, notaFiscal } = nfe;
 
         // 1. Garante que o fornecedor existe
         const nfeCnpj = fornecedor.cnpj ? normalizeCnpj(fornecedor.cnpj) : '';
-        let supplier = nfeCnpj ? appData.suppliers.find(s => normalizeCnpj(s.cnpj) === nfeCnpj) : null; // Usa appData.suppliers
+        let supplier = nfeCnpj ? suppliers.find(s => normalizeCnpj(s.cnpj) === nfeCnpj) : null;
         if (!supplier) {
-            const newSupplierData = {
+            supplier = {
+                id: `sup_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                 name: fornecedor.nome,
                 cnpj: fornecedor.cnpj,
-                address: fornecedor.address || ''
+                address: fornecedor.address || '' // Inclui o endereço
             };
-            supplier = await addSupplier(newSupplierData); // Adiciona no Supabase
-            if (!supplier) {
-                showNotification(`Erro ao adicionar fornecedor ${fornecedor.nome}!`, 'danger');
-                continue;
-            }
+            suppliers.push(supplier);
             showNotification(`Novo fornecedor "${supplier.name}" registado.`, 'info');
         } else {
             // Atualiza o endereço do fornecedor existente, caso tenha mudado ou não estivesse preenchido
             if (fornecedor.address && fornecedor.address !== supplier.address) {
-                const updatedSupplier = await updateSupplier(supplier.id, { address: fornecedor.address }); // Atualiza no Supabase
-                if (!updatedSupplier) {
-                    showNotification(`Erro ao atualizar endereço do fornecedor ${supplier.name}!`, 'danger');
-                }
+                supplier.address = fornecedor.address;
             }
         }
 
-        for (const prod of produtos) { // Usar for...of para await
+        produtos.forEach(prod => {
             // 2. Garante que o item existe no estoque (por código e fornecedor)
-            let existingItem = appData.items.find(item => item.code === prod.code && item.supplier_id === supplier.id); // Usa appData.items e supplier_id
+            let existingItem = items.find(item => item.code === prod.code && item.supplierId === supplier.id);
             if (!existingItem) {
-                const newItemData = {
+                const newItem = {
+                    id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     name: prod.name,
-                    name_en: '',
+                    nameEn: '',
                     code: prod.code,
                     ncm: prod.ncm,
                     description: `Importado via NF-e ${notaFiscal.numero}`,
-                    quantity: 0,
-                    min_quantity: 10,
-                    cost_price: prod.costPrice,
-                    sale_price: prod.costPrice * 1.25,
-                    supplier_id: supplier.id,
+                    quantity: 0, // Começa com 0 pois a entrada e saída são na mesma operação
+                    minQuantity: 10,
+                    costPrice: prod.costPrice,
+                    salePrice: prod.costPrice * 1.25, // Lógica de preço de venda padrão
+                    supplierId: supplier.id,
                     image: null,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
                 };
-                existingItem = await addItem(newItemData); // Adiciona no Supabase
-                if (!existingItem) {
-                    showNotification(`Erro ao adicionar item ${prod.name}!`, 'danger');
-                    continue;
-                }
-                showNotification(`Novo item "${existingItem.name}" registado no estoque.`, 'info');
+                items.push(newItem);
+                existingItem = newItem;
+                showNotification(`Novo item "${newItem.name}" registado no estoque.`, 'info');
             }
 
             const itemId = existingItem.id;
 
             // 3. Cria o movimento de ENTRADA
             const inMovement = {
-                item_id: itemId,
+                id: `mov_in_${Date.now()}_${prod.code}`,
+                itemId: itemId,
                 type: 'in',
                 quantity: prod.quantity,
                 price: prod.costPrice,
                 reason: `Entrada via NF-e: ${notaFiscal.numero}`,
-                created_at: new Date().toISOString()
+                date: new Date().toISOString()
             };
-            const newInMovement = await addMovement(inMovement); // Adiciona movimento no Supabase
-            if (!newInMovement) {
-                showNotification(`Erro ao registar entrada para o item ${prod.name}!`, 'danger');
-                continue;
-            }
+            movements.push(inMovement);
 
             // 4. Cria o movimento de SAÍDA para a operação
             const outMovement = {
-                item_id: itemId,
+                id: `mov_out_${Date.now()}_${prod.code}`,
+                itemId: itemId,
                 type: 'out',
                 quantity: prod.quantity,
-                price: prod.costPrice,
+                price: prod.costPrice, // Usando o preço de custo para a saída também
                 reason: `Saída por Operação de Importação`,
-                operation_id: operationId, // Este operationId é o ID da operations_history
-                created_at: new Date().toISOString()
+                operationId: operationId,
+                date: new Date().toISOString()
             };
-            const newOutMovement = await addMovement(outMovement); // Adiciona movimento no Supabase
-            if (!newOutMovement) {
-                showNotification(`Erro ao registar saída para o item ${prod.name}!`, 'danger');
-                continue;
-            }
-        }
-    }
+            movements.push(outMovement);
+        });
+    });
 
     showNotification(`Movimentos de entrada/saída para ${stagedNfeData.length} NF-e(s) foram registados.`, 'success');
-    await fullUpdate();
+    fullUpdate();
 }
 
-export async function stockInPurchaseOrder(orderId) { // Adicionado async aqui
-    const orderToProcess = appData.pendingPurchaseOrders.find(op => op.id === orderId); // Usa appData.pendingPurchaseOrders
-    if (!orderToProcess) {
+export { openOperationModal, saveManualOperation, finalizarOperacaoDeImportacao, regenerateDocument };
+
+export function stockInPurchaseOrder(orderId) {
+    const orderIndex = pendingPurchaseOrders.findIndex(op => op.id === orderId);
+    if (orderIndex === -1) {
         showNotification("Ordem de compra não encontrada.", "danger");
         return;
     }
+
+    const orderToProcess = pendingPurchaseOrders[orderIndex];
 
     if (orderToProcess.status !== 'pending_stock_entry') {
         showNotification(`A ordem de compra ${orderId} não está pronta para entrada no estoque.`, "warning");
@@ -376,81 +359,64 @@ export async function stockInPurchaseOrder(orderId) { // Adicionado async aqui
     }
 
     // --- PART 1: Stock-IN (Entrada de Estoque) ---
-    for (const orderItem of orderToProcess.items) { // Usar for...of para await
-        const itemToUpdate = appData.items.find(i => i.id === orderItem.id); // Usa appData.items
-        if (itemToUpdate) {
-            const newQuantity = itemToUpdate.quantity + orderItem.operationQuantity;
-            const updatedItem = await updateItem(itemToUpdate.id, { quantity: newQuantity, cost_price: orderItem.costPrice, updated_at: new Date().toISOString() }); // Atualiza no Supabase
-            if (!updatedItem) {
-                showNotification(`Erro ao atualizar stock do item ${itemToUpdate.name}!`, 'danger');
-                return;
-            }
+    orderToProcess.items.forEach(orderItem => {
+        const itemIndex = items.findIndex(i => i.id === orderItem.id);
+        if (itemIndex > -1) {
+            items[itemIndex].quantity += orderItem.operationQuantity;
+            items[itemIndex].costPrice = orderItem.costPrice;
+            items[itemIndex].updatedAt = new Date().toISOString();
 
             const inMovement = {
-                item_id: orderItem.id,
+                id: `mov_in_${Date.now()}_${orderItem.id}`,
+                itemId: orderItem.id,
                 type: 'in',
                 quantity: orderItem.operationQuantity,
                 price: orderItem.costPrice,
-                reason: `Entrada via OC ${orderToProcess.po_id}`, // Ajustado para po_id
-                created_at: new Date().toISOString()
+                reason: `Entrada via OC ${orderToProcess.id}`,
+                date: new Date().toISOString()
             };
-            const newInMovement = await addMovement(inMovement); // Adiciona movimento no Supabase
-            if (!newInMovement) {
-                showNotification(`Erro ao registar entrada para o item ${itemToUpdate.name}!`, 'danger');
-                return;
-            }
+            movements.push(inMovement);
         }
-    }
+    });
 
     // --- PART 2: Transform the OC into an OP (Ordem de Saída) ---
-    const finalOperation = { ...orderToProcess }; // Cria uma cópia para não modificar o original diretamente
-    finalOperation.purchase_order_id = finalOperation.id; // Guarda o ID da OC original
-    finalOperation.id = finalOperation.id.replace('OC-', 'OP-'); // Gera um novo ID para a operação
-    finalOperation.type = 'manual'; // Ou um tipo mais específico
-    finalOperation.status = 'completed';
-    finalOperation.date = new Date().toISOString();
+    const finalOperation = orderToProcess; // Work on the same object reference
 
-    const addedFinalOperation = await addOperationToHistory(finalOperation); // Adiciona a operação final no Supabase
-    if (!addedFinalOperation) {
-        showNotification('Erro ao finalizar operação de OC!', 'danger');
-        return;
-    }
+    // Preserve original OC id for reference if needed, then create the new OP id
+    finalOperation.purchaseOrderId = finalOperation.id; 
+    finalOperation.id = finalOperation.id.replace('OC-', 'OP-');
+    finalOperation.type = 'manual'; // Or a more specific type like 'sale_from_po'
+    finalOperation.status = 'completed';
+    finalOperation.date = new Date().toISOString(); // Update date to reflect completion time
 
     // --- PART 3: Create OUTgoing movements for the new OP ---
-    for (const saleItem of finalOperation.items) { // Usar for...of para await
-        const itemToUpdate = appData.items.find(i => i.id === saleItem.id); // Usa appData.items
-        if (itemToUpdate) {
-            const newQuantity = itemToUpdate.quantity - saleItem.operationQuantity;
-            const updatedItem = await updateItem(itemToUpdate.id, { quantity: newQuantity, updated_at: new Date().toISOString() }); // Atualiza no Supabase
-            if (!updatedItem) {
-                showNotification(`Erro ao atualizar stock do item ${itemToUpdate.name} para saída!`, 'danger');
-                return;
-            }
+    finalOperation.items.forEach(saleItem => {
+        const itemIndex = items.findIndex(i => i.id === saleItem.id);
+        if (itemIndex > -1) {
+            // The stock was already increased in PART 1, now we decrease it for the sale
+            items[itemIndex].quantity -= saleItem.operationQuantity;
         }
         const outMovement = {
-            item_id: saleItem.id,
+            id: `mov_out_${Date.now()}_${saleItem.id}`,
+            itemId: saleItem.id,
             type: 'out',
             quantity: saleItem.operationQuantity,
-            price: saleItem.operationPrice,
-            reason: `Saída por Operação de OC ${finalOperation.purchase_order_id}`,
-            operation_id: addedFinalOperation.id, // Link para a operação recém-criada
-            created_at: new Date().toISOString()
+            price: saleItem.operationPrice, // Use the (potentially updated) sale price
+            reason: `Saída por Operação de OC ${finalOperation.purchaseOrderId}`,
+            operationId: finalOperation.id, // Use the new OP ID
+            date: finalOperation.date
         };
-        const newOutMovement = await addMovement(outMovement); // Adiciona movimento no Supabase
-        if (!newOutMovement) {
-            showNotification(`Erro ao registar saída para o item ${saleItem.name}!`, 'danger');
-            return;
-        }
-    }
+        movements.push(outMovement);
+    });
 
-    // --- PART 4: Remover a Ordem de Compra Pendente ---
-    const success = await deletePendingPurchaseOrder(orderToProcess.id); // Exclui do Supabase
-    if (!success) {
-        showNotification('Erro ao remover ordem de compra pendente!', 'danger');
-        return;
-    }
+    // --- PART 4: Move the transformed operation to the main history ---
+    operationsHistory.push(finalOperation);
+    pendingPurchaseOrders.splice(orderIndex, 1); // Remove from pending list
 
-    showNotification(`Ordem de Compra ${orderToProcess.po_id} processada. Operação de Saída ${addedFinalOperation.operation_id} criada.`, 'success');
-    await fullUpdate();
-    regenerateDocument(addedFinalOperation.id, 'invoice');
+    // --- PART 5: Save and Notify ---
+    saveData();
+    showNotification(`Ordem de Compra ${finalOperation.purchaseOrderId} processada. Operação de Saída ${finalOperation.id} criada.`, 'success');
+
+    // --- PART 6: Redirect to document generation for the new OP ---
+    regenerateDocument(finalOperation.id, 'invoice');
 }

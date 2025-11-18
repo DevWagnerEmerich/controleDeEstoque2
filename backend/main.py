@@ -1,385 +1,316 @@
+
 import os
-import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import List, Optional
+
+from fastapi import (FastAPI, Depends, HTTPException, status, File, UploadFile,
+                     APIRouter)
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
 from lxml import etree
-from http.server import BaseHTTPRequestHandler
-import json
-import cgi
+from passlib.context import CryptContext
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings
+from sqlalchemy import (create_engine, Column, Integer, String, Float,
+                        DateTime, ForeignKey, Text)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, relationship
 
-# --- FUNÇÕES AUXILIARES ROBUSTAS (MANTIDAS) ---
+# --- CONFIGURATION ---
+class Settings(BaseSettings):
+    # ATENÇÃO: Substitua esta URL pela connection string do seu Vercel Postgres
+    # Você a encontrará nas variáveis de ambiente do seu projeto Vercel.
+    DATABASE_URL: str = os.environ.get("POSTGRES_URL_NON_POOLING") or "postgresql://user:password@host:port/db"
+    SECRET_KEY: str = "uma-chave-secreta-muito-forte-deve-ser-colocada-aqui"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 horas
 
-def get_text(element, path, ns, default=''):
-    """Busca um texto em um elemento, tratando ausência e elemento nulo."""
-    if element is None:
-        return default
-    node = element.find(path, ns)
-    return node.text.strip() if node is not None and node.text else default
+    class Config:
+        env_file = ".env"
 
-def get_value(element, path, ns, default=0.0):
-    """Busca um valor numérico em um elemento, tratando ausência e erros."""
-    text = get_text(element, path, ns)
+settings = Settings()
+
+# --- DATABASE SETUP ---
+engine = create_engine(settings.DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
     try:
-        return float(text.replace(',', '.'))
-    except (ValueError, TypeError):
-        return default
+        yield db
+    finally:
+        db.close()
 
-def calculate_audited_weight(description: str, qCom: float):
-    """
-    Tenta calcular o peso de um item auditando sua descrição.
-    Retorna uma tupla (peso_em_kg, unidade_encontrada) ou (None, None).
-    """
-    if not description or qCom == 0:
-        return (None, None)
+# --- PASSWORD HASHING ---
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-    desc_lower = description.lower()
+# --- AUTHENTICATION ---
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-    # ETAPA 1: Tenta encontrar o padrão de "pacote" (ex: 20x500g)
-    package_match = re.search(r'(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)\s*(g|gr|kg|l)(?![a-z])', desc_lower)
-    if package_match:
-        try:
-            qty_in_com_unit = float(package_match.group(1).replace(',', '.'))
-            value_per_sub_unit = float(package_match.group(2).replace(',', '.'))
-            unit = package_match.group(3)
+# --- DATABASE MODELS (SQLAlchemy) ---
 
-            weight_of_com_unit = qty_in_com_unit * value_per_sub_unit
-            total_weight = qCom * weight_of_com_unit
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, default="user")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-            if unit in ['g', 'gr']:
-                return (total_weight / 1000.0, 'G')
-            elif unit == 'kg':
-                return (total_weight, 'KG')
-            elif unit == 'l':
-                return (total_weight * 1.03, 'L')
-        except (ValueError, IndexError):
-            return (None, None)
+class Supplier(Base):
+    __tablename__ = "suppliers"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=False)
+    cnpj = Column(String, unique=True, index=True)
+    address = Column(String)
+    fda = Column(String)
+    email = Column(String)
+    salesperson = Column(String)
+    phone = Column(String)
+    products = relationship("Product", back_populates="supplier")
 
-    # ETAPA 2: Se não for pacote, tenta encontrar o padrão de "item único" (ex: 0.400kg)
-    single_item_match = re.search(r'(\d+(?:[.,]\d+)?)\s*(g|gr|kg|l)\b', desc_lower)
-    if single_item_match:
-        try:
-            weight_per_item = float(single_item_match.group(1).replace(',', '.'))
-            unit = single_item_match.group(2)
+class Product(Base):
+    __tablename__ = "products"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=False)
+    name_en = Column(String)
+    code = Column(String, index=True)
+    ncm = Column(String)
+    description = Column(Text)
+    quantity = Column(Float, default=0)
+    min_quantity = Column(Float, default=0)
+    cost_price = Column(Float, default=0)
+    sale_price = Column(Float, default=0)
+    package_type = Column(String) # ex: 'caixa', 'fardo'
+    units_per_package = Column(Integer, default=1)
+    unit_measure_value = Column(Float, default=1)
+    unit_measure_type = Column(String) # ex: 'kg', 'g', 'un'
+    image = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"))
+    supplier = relationship("Supplier", back_populates="products")
 
-            total_weight = qCom * weight_per_item
 
-            if unit in ['g', 'gr']:
-                return (total_weight / 1000.0, 'G')
-            elif unit == 'kg':
-                return (total_weight, 'KG')
-            elif unit == 'l':
-                return (total_weight * 1.03, 'L')
-        except (ValueError, IndexError):
-            return (None, None)
+# --- PYDANTIC SCHEMAS (for API validation) ---
 
-    return (None, None)
+class ProductBase(BaseModel):
+    name: str
+    code: str
+    quantity: float
+    cost_price: float
+    sale_price: float
+    supplier_id: int
 
-def get_qty_kg(prod, ns):
-    """
-    Lógica Crítica: Extrai a quantidade em KG de um item.
-    Plano A: Usa dados tributários (uTrib/qTrib).
-    Plano B: Usa dados comerciais (uCom/qCom) como fallback.
-    Plano C: Retorna 0 se nenhuma unidade de peso for encontrada.
-    """
-    # Plano A: Leitura Fiscal/Tributável
-    uTrib = get_text(prod, 'nfe:uTrib', ns).upper()
-    if uTrib in ["KG", "G", "GR", "T", "L"]:
-        qTrib = get_value(prod, 'nfe:qTrib', ns)
-        if uTrib == "KG":
-            return qTrib
-        if uTrib in ["G", "GR"]:
-            return qTrib / 1000.0
-        if uTrib == "T":
-            return qTrib * 1000.0
-        if uTrib == "L": # NEW: Handle Liters
-            return qTrib * 1.03 # 1L = 1.03kg for milk
+class ProductCreate(ProductBase):
+    pass
 
-    # Plano B: Fallback Comercial
-    uCom = get_text(prod, 'nfe:uCom', ns).upper()
-    if uCom in ["KG", "G", "GR", "T", "L"]:
-        qCom = get_value(prod, 'nfe:qCom', ns)
-        if uCom == "KG":
-            return qCom
-        if uCom in ["G", "GR"]:
-            return qCom / 1000.0
-        if uCom == "T":
-            return qCom * 1000.0
-        if uCom == "L": # NEW: Handle Liters
-            return qCom * 1.03 # 1L = 1.03kg for milk
+class ProductSchema(ProductBase):
+    id: int
+    class Config:
+        from_attributes = True
 
-    # Plano C: Falha Segura
-    return 0.0
+class SupplierBase(BaseModel):
+    name: str
+    cnpj: Optional[str] = None
 
-def get_peso_liquido(infNFe, ns, all_products_data):
-    """
-    Extrai o Peso Líquido Total.
-    Prioriza a soma dos pesos calculados de cada item, com fallback inteligente para a soma dos volumes.
-    """
-    soma_pesos_itens = sum(p.get('calculated_qty_kg', 0.0) for p in all_products_data)
+class SupplierCreate(SupplierBase):
+    pass
 
-    total_peso_l_volumes = 0.0
-    transp = infNFe.find('nfe:transp', ns)
-    if transp is not None:
-        for vol in transp.findall('nfe:vol', ns):
-            peso_l_volume = get_value(vol, 'nfe:pesoL', ns)
-            total_peso_l_volumes += peso_l_volume
-    
-    # Lógica inteligente: se a soma dos itens for próxima da soma dos volumes e a soma dos volumes for maior, usa a soma dos volumes.
-    if soma_pesos_itens > 0 and total_peso_l_volumes > 0:
-        diff = abs(soma_pesos_itens - total_peso_l_volumes)
-        percentage_diff = (diff / soma_pesos_itens) * 100 if soma_pesos_itens > 0 else 0
+class SupplierSchema(SupplierBase):
+    id: int
+    products: List[ProductSchema] = []
+    class Config:
+        from_attributes = True
 
-        if percentage_diff <= 5 and total_peso_l_volumes > soma_pesos_itens: # Diferença até 5% e valor do XML é maior
-            return total_peso_l_volumes
-        else:
-            return soma_pesos_itens # Caso contrário, mantém a soma dos itens
-    elif soma_pesos_itens > 0:
-        return soma_pesos_itens
-    elif total_peso_l_volumes > 0:
-        return total_peso_l_volumes
-    
-    return 0.0
+class UserBase(BaseModel):
+    username: str
 
-def get_peso_bruto(infNFe, ns, peso_liquido_final):
-    """
-    Extrai o Peso Bruto Total.
-    Prioriza a soma dos pesos brutos de todos os volumes na secção <transp>.
-    Plano B: Usa o Peso Líquido final (soma dos itens auditados) como base.
-    Plano C: Retorna 0.
-    """
-    # Priorizar a soma dos pesos brutos de todos os volumes na secção <transp>
-    total_peso_b_volumes = 0.0
-    transp = infNFe.find('nfe:transp', ns)
-    if transp is not None:
-        for vol in transp.findall('nfe:vol', ns):
-            peso_b_volume = get_value(vol, 'nfe:pesoB', ns)
-            total_peso_b_volumes += peso_b_volume
-    
-    if total_peso_b_volumes > 0:
-        return total_peso_b_volumes
+class UserCreate(UserBase):
+    password: str
+    role: str = "user"
 
-    # Fallback para Peso Líquido * 1.035
-    if peso_liquido_final > 0:
-        return peso_liquido_final * 1.035
+class UserSchema(UserBase):
+    id: int
+    role: str
+    class Config:
+        from_attributes = True
 
-    # Fallback para 0
-    return 0.0
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
-# --- PARSER PRINCIPAL ROBUSTO (MANTIDO) ---
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+# --- UTILITY FUNCTIONS ---
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+    except JWTError:
+        raise credentials_exception
+    user = db.query(User).filter(User.username == token_data.username).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+# --- API ROUTERS ---
+
+# Router for Authentication
+auth_router = APIRouter()
+
+@auth_router.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@auth_router.post("/users/", response_model=UserSchema)
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.username == user.username).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    hashed_password = get_password_hash(user.password)
+    db_user = User(username=user.username, hashed_password=hashed_password, role=user.role)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+# Router for main API endpoints
+api_router = APIRouter()
+
+@api_router.get("/products/", response_model=List[ProductSchema])
+def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    products = db.query(Product).offset(skip).limit(limit).all()
+    return products
+
+# --- XML PARSING LOGIC (from original file) ---
+# Note: This is kept as a utility function. The endpoint is below.
+
 def parse_nfe_xml(xml_content: bytes):
-    print("Usando o parser de XML robusto (lxml)પૂર્ણ...")
     try:
-        # Remove declaração de XML se presente para evitar erros de parsing
-        xml_content = re.sub(b'^[ \t\n\r]*<\?xml.*\?>', b'', xml_content, count=1)
         root = etree.fromstring(xml_content)
-        
-        # Detecta o namespace automaticamente da tag raiz
-        ns = {'nfe': root.nsmap.get(None, 'http://www.portalfiscal.inf.br/nfe')}
+        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         infNFe = root.find('.//nfe:infNFe', ns)
-        if infNFe is None:
-            # Fallback para XML sem namespace
-            ns = {}
-            infNFe = root.find('.//infNFe', ns)
-            if infNFe is None:
-                raise ValueError("Elemento <infNFe> não encontrado.")
-
+        if infNFe is None: return None
+        
         ide = infNFe.find('nfe:ide', ns)
         emit = infNFe.find('nfe:emit', ns)
+        
+        # Basic data extraction with fallbacks
+        get_text = lambda elem, path, ns, default='': (t.text.strip() if t is not None and t.text else default)
+        get_value = lambda elem, path, ns, default=0.0: float(get_text(elem, path, ns, default) or default)
 
-        # Dados da Nota Fiscal
-        nfe_number = ''
-        nfe_serie = ''
-        dh_emi_str = ''
-        data_emissao = ''
-
-        nfe_number = get_text(ide, 'nfe:nNF', ns, 'NFe_UNKNOWN') # Simplificado para depuração
-        nfe_serie = get_text(ide, 'nfe:serie', ns, '1')
-        dh_emi_str = get_text(ide, 'nfe:dhEmi', ns)
-        data_emissao = dh_emi_str.split('T')[0] if 'T' in dh_emi_str else dh_emi_str
-
-        # --- EXTRAÇÃO DOS PRODUTOS (PRECISA SER FEITA PRIMEIRO PARA O CÁLCULO DE PESO) ---
         all_products = []
         for det in infNFe.findall('nfe:det', ns):
             prod = det.find('nfe:prod', ns)
             if prod is None: continue
-
-            # 4.1. QNT / QTY UNIT (Quantidade Comercial)
-            qCom = get_value(prod, 'nfe:qCom', ns)
-            if qCom == 0:
-                qCom = get_value(prod, 'nfe:qTrib', ns)
-
-            # 4.2. U/M (Unidade de Medida Comercial)
-            uCom = get_text(prod, 'nfe:uCom', ns)
-            if not uCom:
-                uCom = get_text(prod, 'nfe:uTrib', ns, 'N/A')
-
-            # 4.5. UNIT $ (BRL) (Valor Unitário Comercial)
-            vUnCom = get_value(prod, 'nfe:vUnCom', ns)
-            if vUnCom == 0:
-                vProd = get_value(prod, 'nfe:vProd', ns)
-                if vProd > 0 and qCom > 0:
-                    vUnCom = vProd / qCom
             
-            # 4.6. $ BRL (Total) (Valor Total do Item em BRL)
-            vProd = get_value(prod, 'nfe:vProd', ns)
-            if vProd == 0 and vUnCom > 0 and qCom > 0:
-                vProd = vUnCom * qCom
-
-            # Cria o dicionário de dados preliminar
             product_data = {
                 "code": get_text(prod, 'nfe:cProd', ns),
                 "name": get_text(prod, 'nfe:xProd', ns, 'N/A'),
                 "ncm": get_text(prod, 'nfe:NCM', ns, 'N/A'),
-                "quantity": qCom,
-                "costPrice": vUnCom,
-                "totalPriceBRL": vProd,
-                "dadosCompletos": {
-                    "unidade": uCom
-                },
-                "calculated_qty_kg": get_qty_kg(prod, ns)
+                "quantity": get_value(prod, 'nfe:qCom', ns),
+                "costPrice": get_value(prod, 'nfe:vUnCom', ns),
+                "totalPriceBRL": get_value(prod, 'nfe:vProd', ns),
             }
-
-            # Auditoria de Peso
-            official_kg = product_data['calculated_qty_kg']
-            audited_kg, audited_unit = calculate_audited_weight(product_data['name'], qCom)
-            print(f"--- Auditoria de Peso para: {product_data['name']}")
-            print(f"  -> Peso Declarado (qTrib): {official_kg:.4f} kg")
-            if audited_kg is not None:
-                print(f"  -> Peso Auditado (descrição): {audited_kg:.4f} kg")
-                if abs(official_kg - audited_kg) > 0.01: # Compara com uma pequena tolerância
-                    print("  ** ALERTA: Discrepância encontrada! SUBSTITUINDO o peso declarado pelo auditado. **")
-                    product_data['calculated_qty_kg'] = audited_kg # Substitui o valor
-                    if audited_unit:
-                        product_data['dadosCompletos']['unidade'] = audited_unit
-            else:
-                print("  -> Peso Auditado (descrição): Não foi possível calcular.")
-
-
-
             all_products.append(product_data)
 
-        # --- EXTRAÇÃO DOS DADOS GERAIS (AGORA COM FALLBACKS) ---
-        peso_liquido_final = get_peso_liquido(infNFe, ns, all_products)
-        peso_bruto_final = get_peso_bruto(infNFe, ns, peso_liquido_final)
-
-        # Dados do Fornecedor
         supplier_name = get_text(emit, 'nfe:xNome', ns, 'N/A')
         cnpj = get_text(emit, 'nfe:CNPJ', ns)
-        
-        # Extrair endereço do fornecedor
-        enderEmit = emit.find('nfe:enderEmit', ns)
-        address_parts = []
-        if enderEmit is not None:
-            xLgr = get_text(enderEmit, 'nfe:xLgr', ns)
-            nro = get_text(enderEmit, 'nfe:nro', ns)
-            xCpl = get_text(enderEmit, 'nfe:xCpl', ns)
-            xBairro = get_text(enderEmit, 'nfe:xBairro', ns)
-            xMun = get_text(enderEmit, 'nfe:xMun', ns)
-            UF = get_text(enderEmit, 'nfe:UF', ns)
-            CEP = get_text(enderEmit, 'nfe:CEP', ns)
-
-            if xLgr: address_parts.append(xLgr)
-            if nro: address_parts.append(nro)
-            if xCpl: address_parts.append(xCpl)
-            if xBairro: address_parts.append(xBairro)
-            if xMun: address_parts.append(xMun)
-            if UF: address_parts.append(UF)
-            if CEP: address_parts.append(CEP)
-        
-        address = ", ".join(address_parts) if address_parts else ""
 
         return {
-            "fornecedor": {"nome": supplier_name, "cnpj": cnpj, "address": address},
+            "fornecedor": {"nome": supplier_name, "cnpj": cnpj},
             "produtos": all_products,
-            "notaFiscal": {
-                "numero": nfe_number,
-                "serie": nfe_serie,
-                "dataEmissao": data_emissao,
-                "pesoBruto": peso_bruto_final,
-                "pesoLiquido": peso_liquido_final
-            }
         }
-    except etree.XMLSyntaxError as e:
-        raise ValueError(f"Erro de sintaxe no XML: {e}")
     except Exception as e:
-        import traceback
-        trace = traceback.format_exc()
-        raise ValueError(f"Erro inesperado ao processar o XML: {e}\nTraceback: {trace}")
+        # In a real app, log this error
+        print(f"Error parsing XML: {e}")
+        return None
+
+@api_router.post("/upload-xml/")
+async def upload_xml_file(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
+    if not file.filename.endswith('.xml'):
+        raise HTTPException(status_code=400, detail="Apenas ficheiros XML são permitidos.")
+    
+    xml_content = await file.read()
+    parsed_data = parse_nfe_xml(xml_content)
+    
+    if not parsed_data or not parsed_data.get("produtos"):
+        raise HTTPException(status_code=404, detail="Nenhum produto encontrado no XML ou formato não suportado.")
+        
+    return JSONResponse(content=parsed_data)
 
 
-# --- Vercel Serverless Function Handler ---
-def handler(request):
-    if request.method == 'POST':
-        try:
-            # Parse multipart/form-data
-            form = cgi.FieldStorage(
-                fp=request.body,
-                headers=request.headers,
-                environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': request.headers['Content-Type']}
-            )
-            file_item = form['file']
+# --- MAIN FASTAPI APP ---
+app = FastAPI(title="Controle de Estoque API")
 
-            if not file_item.filename.endswith('.xml'):
-                return json_response({"detail": "Apenas ficheiros XML são permitidos."}, status=400)
+# Include the routers
+app.include_router(auth_router, tags=["Authentication"])
+app.include_router(api_router, prefix="/api", tags=["API"])
 
-            xml_content = file_item.file.read()
-            parsed_data = parse_nfe_xml(xml_content)
+@app.on_event("startup")
+def on_startup():
+    # This will create the tables in the database on startup.
+    # For production, a migration tool like Alembic is recommended.
+    try:
+        Base.metadata.create_all(bind=engine)
 
-            if not parsed_data or not parsed_data.get("produtos"):
-                return json_response({"detail": "Nenhum produto encontrado no XML. O formato pode não ser suportado."}, status=404)
+        # Create a default admin user if one doesn't exist
+        db = SessionLocal()
+        admin = db.query(User).filter(User.username == "admin").first()
+        if not admin:
+            hashed_password = get_password_hash("admin123")
+            admin_user = User(username="admin", hashed_password=hashed_password, role="admin")
+            db.add(admin_user)
+            db.commit()
+            print("Default admin user created with password 'admin123'")
+        db.close()
+    except Exception as e:
+        print(f"Error during startup database setup: {e}")
+        # This might happen if the DB is not ready. In a real app, handle this with retries.
 
-            return json_response(parsed_data)
 
-        except Exception as e:
-            import traceback
-            trace = traceback.format_exc()
-            return json_response({"detail": f"Erro interno do servidor: {e}\nTraceback: {trace}"}, status=500)
-    else:
-        return json_response({"detail": "Método não permitido"}, status=405)
+@app.get("/")
+def read_root():
+    return {"message": "Bem-vindo à API do Controle de Estoque. Acesse /docs para ver a documentação."}
 
-def json_response(data, status=200):
-    return {
-        "statusCode": status,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", # Permite CORS
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization"
-        },
-        "body": json.dumps(data)
-    }
-
-# Para testes locais, pode-se usar um servidor HTTP simples
-if __name__ == '__main__':
-    class LocalTestHandler(BaseHTTPRequestHandler):
-        def do_POST(self):
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            
-            # Simula o processamento do arquivo
-            content_type = self.headers['Content-Type']
-            if content_type:
-                ctype, pdict = cgi.parse_header(content_type)
-                if ctype == 'multipart/form-data':
-                    fs = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD':'POST', 'CONTENT_TYPE':content_type})
-                    file_item = fs['file']
-                    if file_item.filename.endswith('.xml'):
-                        xml_content = file_item.file.read()
-                        try:
-                            parsed_data = parse_nfe_xml(xml_content)
-                            self.wfile.write(json.dumps(parsed_data).encode('utf-8'))
-                        except Exception as e:
-                            self.wfile.write(json.dumps({"detail": str(e)}).encode('utf-8'))
-                    else:
-                        self.wfile.write(json.dumps({"detail": "Apenas ficheiros XML são permitidos."}).encode('utf-8'))
-                else:
-                    self.wfile.write(json.dumps({"detail": "Content-Type não suportado."}))
-            else:
-                self.wfile.write(json.dumps({"detail": "Content-Type ausente."}))
-
-    from http.server import HTTPServer
-    server_address = ('', 8001)
-    httpd = HTTPServer(server_address, LocalTestHandler)
-    print(f"Servidor de teste local rodando em http://localhost:8001")
-    httpd.serve_forever()

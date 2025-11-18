@@ -1,12 +1,9 @@
 import { openModal, closeModal, showNotification, showConfirmModal } from './ui.js';
-import { 
-    addItem, updateItem, addSupplier, addPendingPurchaseOrder, updatePendingPurchaseOrder, deletePendingPurchaseOrder,
-    addOperationToHistory, addMovement
-} from './database.js';
-import { appData } from './main.js'; // Importa a variável global de dados
-import { finalizarOperacaoDeImportacao } from './operations.js'; // Ainda depende de appData.items/suppliers
+import { items, suppliers, saveData, operationsHistory, pendingSimulations, movements, pendingPurchaseOrders } from './database.js';
+import { finalizarOperacaoDeImportacao } from './operations.js';
+import { openOperationsHistoryModal } from './ui.js';
 
-const AUTO_SAVE_KEY = 'stock_simulation_draft'; // Ainda usa localStorage para rascunho local
+const AUTO_SAVE_KEY = 'stock_simulation_draft';
 let currentSimulation = {};
 
 function toggleSimulationActionButtons(enable) {
@@ -16,7 +13,8 @@ function toggleSimulationActionButtons(enable) {
 }
 
 export function openSimulationModal() {
-    const savedDraft = localStorage.getItem(AUTO_SAVE_KEY); // Mantém rascunho no localStorage por enquanto
+
+    const savedDraft = localStorage.getItem(AUTO_SAVE_KEY);
     if (savedDraft) {
         showConfirmModal(
             'Continuar simulação?',
@@ -75,7 +73,7 @@ function renderSimulationSummary() {
 
     currentSimulation.items.forEach(simItem => {
         totalQuantity += simItem.operationQuantity;
-        totalCost += simItem.operationQuantity * (simItem.cost_price || 0); // Ajustado para cost_price
+        totalCost += simItem.operationQuantity * (simItem.costPrice || 0);
     });
 
     summaryContainer.innerHTML = `
@@ -130,13 +128,14 @@ function removeItemFromSimulation(itemId) {
     renderSimulationAvailableItems();
     autoSaveSimulation();
 }
+window.removeItemFromSimulation = removeItemFromSimulation;
 
 function renderSimulationAvailableItems() {
     const container = document.getElementById('sim-available-items');
     container.innerHTML = '';
 
     const searchTerm = document.getElementById('sim-search-input').value.toLowerCase();
-    const filteredItems = appData.items.filter(item => { // Usa appData.items
+    const filteredItems = items.filter(item => {
         const nameMatch = item.name ? item.name.toLowerCase().includes(searchTerm) : false;
         const codeMatch = item.code ? item.code.toLowerCase().includes(searchTerm) : false;
         const ncmMatch = item.ncm ? item.ncm.toLowerCase().includes(searchTerm) : false;
@@ -153,7 +152,7 @@ function renderSimulationAvailableItems() {
         const div = document.createElement('div');
         div.className = `op-item-card available ${isAdded ? 'added' : ''}`;
 
-        const supplier = appData.suppliers.find(s => s.id === item.supplier_id); // Usa appData.suppliers e supplier_id
+        const supplier = suppliers.find(s => s.id === item.supplierId);
         const supplierName = supplier ? supplier.name : 'Fornecedor Desconhecido';
 
         div.innerHTML = `
@@ -184,37 +183,37 @@ function calculateSimulationItemQtyUnit(prod, supplier, allItems) {
     // 3. Tentar extrair da descrição (padrão 400G).
 
     // --- Prioridade 1: Dados do Estoque ---
-    if (prod.unit_measure_value > 0 && prod.units_per_package > 0 && prod.unit_measure_type !== 'un') { // Ajustado para nomes do BD
+    if (prod.unitMeasureValue > 0 && prod.unitsPerPackage > 0 && prod.unitMeasureType !== 'un') {
         // Os dados já estão no objeto 'prod', nada a fazer aqui.
     } else {
         // --- Prioridade 2: Extração da Descrição (Padrão Caixa/Fardo) ---
         const packageMatch = prod.name.match(/(\d+)\s*[xX]\s*(\d+(?:[.,]\d+)?)(?:[^\d\w]*)(G|GR|KG|L|ML)?/i);
         if (packageMatch) {
-            prod.units_per_package = parseInt(packageMatch[1], 10); // Ajustado para units_per_package
-            prod.unit_measure_value = parseFloat(packageMatch[2].replace(',', '.')); // Ajustado para unit_measure_value
-            prod.unit_measure_type = (packageMatch[3] || '').toLowerCase(); // Ajustado para unit_measure_type
+            prod.unitsPerPackage = parseInt(packageMatch[1], 10);
+            prod.unitMeasureValue = parseFloat(packageMatch[2].replace(',', '.'));
+            prod.unitMeasureType = (packageMatch[3] || '').toLowerCase();
         } else {
             // --- Prioridade 3: Extração da Descrição (Padrão Item Único) ---
             const singleItemMatch = prod.name.match(/(\d+(?:[.,]\d+)?)(?:[^\d\w]*)(G|GR|KG|L|ML)/i);
             if (singleItemMatch) {
-                prod.units_per_package = 1; // Para itens únicos, a embalagem é 1
-                prod.unit_measure_value = parseFloat(singleItemMatch[1].replace(',', '.')); // Ajustado para unit_measure_value
-                prod.unit_measure_type = (singleItemMatch[2] || '').toLowerCase(); // Ajustado para unit_measure_type
+                prod.unitsPerPackage = 1; // Para itens únicos, a embalagem é 1
+                prod.unitMeasureValue = parseFloat(singleItemMatch[1].replace(',', '.'));
+                prod.unitMeasureType = (singleItemMatch[2] || '').toLowerCase();
             }
         }
     }
 
     // Normaliza a unidade de medida (g, gr -> g)
-    if (prod.unit_measure_type === 'gr') { // Ajustado para unit_measure_type
-        prod.unit_measure_type = 'g'; // Ajustado para unit_measure_type
+    if (prod.unitMeasureType === 'gr') {
+        prod.unitMeasureType = 'g';
     }
 
     // Formata a string de retorno para exibição (ex: "12X400G")
     let qtyUnitString = '';
-    if (prod.units_per_package > 0 && prod.unit_measure_value > 0) { // Ajustado para nomes do BD
-        qtyUnitString = `${prod.units_per_package}X${prod.unit_measure_value}${prod.unit_measure_type.toUpperCase()}`; // Ajustado para nomes do BD
-    } else if (prod.unit_measure_value > 0) { // Ajustado para unit_measure_value
-        qtyUnitString = `${prod.unit_measure_value}${prod.unit_measure_type.toUpperCase()}`; // Ajustado para unit_measure_value
+    if (prod.unitsPerPackage > 0 && prod.unitMeasureValue > 0) {
+        qtyUnitString = `${prod.unitsPerPackage}X${prod.unitMeasureValue}${prod.unitMeasureType.toUpperCase()}`;
+    } else if (prod.unitMeasureValue > 0) {
+        qtyUnitString = `${prod.unitMeasureValue}${prod.unitMeasureType.toUpperCase()}`;
     }
 
     return qtyUnitString;
@@ -226,9 +225,9 @@ function addItemToSimulation(itemId) {
         currentSimulation.items = [];
     }
 
-    const item = { ...appData.items.find(i => i.id === itemId) }; // Usa appData.items
-    const supplier = appData.suppliers.find(s => s.id === item.supplier_id); // Usa appData.suppliers e supplier_id
-    const calculatedQtyUnit = calculateSimulationItemQtyUnit(item, supplier, appData.items); // Usa appData.items
+    const item = { ...items.find(i => i.id === itemId) };
+    const supplier = suppliers.find(s => s.id === item.supplierId);
+    const calculatedQtyUnit = calculateSimulationItemQtyUnit(item, supplier, items);
 
     const quantity = 1; // Quantity is always 1 in the simulation phase
 
@@ -240,7 +239,7 @@ function addItemToSimulation(itemId) {
         currentSimulation.items.push({
             ...item,
             operationQuantity: quantity,
-            operationPrice: item.sale_price || item.cost_price || 0, // Usa preço de venda ou custo
+            operationPrice: item.salePrice || item.costPrice || 0, // Usa preço de venda ou custo
             qtyUnit: calculatedQtyUnit // Adiciona o qtyUnit calculado
         });
         showNotification(`${item.name} adicionado à simulação.`, 'success');
@@ -256,10 +255,13 @@ function addItemToSimulation(itemId) {
     autoSaveSimulation();
 }
 
-export async function openSimAddItemModal() { // Adicionado async aqui
+window.addItemToSimulation = addItemToSimulation;
+window.renderSimulationAvailableItems = renderSimulationAvailableItems; // Para o input de busca
+
+export function openSimAddItemModal() {
     const supplierSelect = document.getElementById('simItemSupplier');
     supplierSelect.innerHTML = '';
-    appData.suppliers.forEach(supplier => { // Usa appData.suppliers
+    suppliers.forEach(supplier => {
         const option = document.createElement('option');
         option.value = supplier.id;
         option.innerText = supplier.name;
@@ -275,7 +277,7 @@ export async function openSimAddItemModal() { // Adicionado async aqui
     openModal('sim-add-item-modal');
 }
 
-async function saveSimItem(event) { // Adicionado async aqui
+function saveSimItem(event) {
     event.preventDefault();
 
     // Captura todos os valores do formulário
@@ -307,43 +309,42 @@ async function saveSimItem(event) { // Adicionado async aqui
     }
 
     // VERIFICA SE O ITEM JÁ EXISTE NO ESTOQUE PRINCIPAL
-    const alreadyExists = appData.items.some(item => item.code === code && item.supplier_id === supplierId); // Usa appData.items e supplier_id
+    const alreadyExists = items.some(item => item.code === code && item.supplierId === supplierId);
     if (alreadyExists) {
         showNotification('Um item com este Código/SKU e Fornecedor já existe no estoque.', 'danger');
         return;
     }
 
-    const newItemData = {
+    const newItem = {
+        id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         name: name,
-        name_en: nameEn, // Ajustado para name_en
+        nameEn: nameEn,
         code: code,
         ncm: ncm,
         description: description || `Item ${name} adicionado via simulação.`,
-        cost_price: costPrice, // Ajustado para cost_price
-        sale_price: costPrice * 1.25, // Ajustado para sale_price
-        supplier_id: supplierId, // Ajustado para supplier_id
+        costPrice: costPrice,
+        salePrice: costPrice * 1.25,
+        supplierId: supplierId,
         quantity: 0, // Itens novos entram com estoque 0
-        min_quantity: 0, // Ajustado para min_quantity
-        units_per_package: unitsPerPackage, // Ajustado para units_per_package
-        package_type: unitsPerPackage > 1 ? 'caixa' : 'unidade', // Ajustado para package_type
-        unit_measure_value: unitMeasureValue, // Ajustado para unit_measure_value
-        unit_measure_type: unitMeasureType, // Ajustado para unit_measure_type
+        minQuantity: 0,
+        unitsPerPackage: unitsPerPackage,
+        packageType: unitsPerPackage > 1 ? 'caixa' : 'unidade',
+        unitMeasureValue: unitMeasureValue,
+        unitMeasureType: unitMeasureType,
         image: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
     };
 
-    const newItem = await addItem(newItemData); // Adiciona o item diretamente ao estoque principal via Supabase
-    if (!newItem) {
-        showNotification('Erro ao adicionar novo item!', 'danger');
-        return;
-    }
+    // Adiciona o item diretamente ao estoque principal
+    items.push(newItem);
+    saveData(); // Persiste a alteração imediatamente
 
     showNotification(`Novo item "${name}" foi adicionado ao estoque!`, 'success');
     closeModal('sim-add-item-modal');
     document.getElementById('sim-item-form').reset();
     
-    await fullUpdate(); // Atualiza a lista de itens disponíveis na simulação para que o novo item apareça
+    // Atualiza a lista de itens disponíveis na simulação para que o novo item apareça
     renderSimulationAvailableItems();
 }
 
@@ -376,62 +377,62 @@ export function previewSimulationAsInvoice() {
             items: currentSimulation.items,
             type: 'simulation_preview' // Tipo especial para preview
         },
-        allSuppliers: appData.suppliers // Passa todos os fornecedores para lookup, usa appData.suppliers
+        allSuppliers: suppliers // Passa todos os fornecedores para lookup
     };
 
     localStorage.setItem('currentDocument', JSON.stringify(dataForDocument));
     window.open('gerenciador_invoice.html?origin=simulation', '_self');
 }
 
-export async function saveSimulationAsDraft() { // Adicionado async aqui
+export function saveSimulationAsDraft() {
     if (currentSimulation.items.length === 0) {
         showNotification('Adicione itens à simulação antes de salvar como rascunho.', 'warning');
         return;
     }
 
     currentSimulation.status = 'pending';
-    // pendingSimulations.push(currentSimulation); // Não usamos mais arrays globais
-    // Salvar rascunhos de simulação no Supabase (tabela pending_simulations, se criada)
-    // Por enquanto, mantemos no localStorage para simplicidade do rascunho local.
-    // Se for para persistir entre sessões/dispositivos, precisaria de uma tabela no Supabase.
-    autoSaveSimulation(); // Mantém o auto-save no localStorage
-
+    pendingSimulations.push(currentSimulation);
+    saveData();
+    clearAutoSave();
     closeModal('simulation-modal');
     showNotification(`Simulação ${currentSimulation.id} salva como rascunho.`, 'success');
     toggleSimulationActionButtons(false);
+    // Opcional: abrir o histórico de operações para ver o rascunho
+    // openOperationsHistoryModal();
 }
 
-export async function createPurchaseOrder() { // Adicionado async aqui
+export function createPurchaseOrder() {
     if (!currentSimulation || !currentSimulation.items || currentSimulation.items.length === 0) {
         showNotification('Adicione itens à simulação antes de criar uma Ordem de Compra.', 'warning');
         return;
     }
 
-    // 1. Cria a Ordem de Compra no Supabase
-    const newPurchaseOrderData = {
-        po_id: currentSimulation.id.replace('SIM', 'OC'), // Troca o prefixo para Ordem de Compra
+    // 1. Cria a Ordem de Compra no histórico de operações
+    const newPurchaseOrder = {
+        id: currentSimulation.id.replace('SIM', 'OC'), // Troca o prefixo para Ordem de Compra
         date: new Date().toISOString(),
-        items: currentSimulation.items, // JSONB
+        items: currentSimulation.items,
         type: 'purchase_order',
         status: 'pending_xml' // Status inicial
     };
-    const newPurchaseOrder = await addPendingPurchaseOrder(newPurchaseOrderData); // Adiciona no Supabase
-    if (!newPurchaseOrder) {
-        showNotification('Erro ao criar Ordem de Compra!', 'danger');
-        return;
-    }
+    pendingPurchaseOrders.push(newPurchaseOrder);
 
     // 2. Não há movimento de estoque nesta fase. O estoque só será atualizado na Fase 4.
 
     // 3. Salva os dados, limpa o rascunho automático e fecha o modal
-    clearAutoSave(); // Limpa o rascunho local
+    saveData();
+    clearAutoSave();
     closeModal('simulation-modal');
-    showNotification(`Ordem de Compra ${newPurchaseOrder.po_id} criada com sucesso! Status: Aguardando XML.`, 'success');
+    showNotification(`Ordem de Compra ${newPurchaseOrder.id} criada com sucesso! Status: Aguardando XML.`, 'success');
     
-    await fullUpdate(); // Atualiza a UI para mostrar a nova OC
+    // Futuramente, podemos redirecionar para a nova tela de Ordens de Compra
+    // openPurchaseOrdersScreen(); 
+    
     toggleSimulationActionButtons(false);
 }
 
 export function finalizeSimulation() {
+    // Esta função foi substituída pela createPurchaseOrder para implementar o novo fluxo de compra.
+    // A lógica original de débito de estoque foi removida.
     showNotification('Esta função foi desativada. Use "Criar Ordem de Compra".', 'info');
 }

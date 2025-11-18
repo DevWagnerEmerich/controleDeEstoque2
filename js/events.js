@@ -1,11 +1,11 @@
-import { openItemModal, openSuppliersModal, openUsersModal, closeModal, resetUserForm, previewImage, openModal, openOperationsHistoryModal, showConfirmModal, showNotification, renderItems } from './ui.js';
+import { openItemModal, openSuppliersModal, openUsersModal, closeModal, resetUserForm, previewImage, openModal, openOperationsHistoryModal, showConfirmModal, showNotification } from './ui.js';
 import { openOperationModal, saveManualOperation } from './operations.js';
 import { openSimulationModal, previewSimulationAsInvoice, saveSimulationAsDraft, createPurchaseOrder, openSimAddItemModal } from './simulation.js';
 import { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport } from './reports.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
-import { handleLogout, login } from './auth.js';
-import { clearAllData, getAllItems, updateItem, addMovement } from './database.js'; // Importa clearAllData e outras funções do database.js
-import { appData } from './main.js'; // Importa appData
+import { handleLogout } from './auth.js';
+import { renderItems } from './ui.js';
+import { clearAllData } from './database.js';
 
 export function initializeEventListeners() {
     const addClickListener = (id, handler) => {
@@ -29,23 +29,12 @@ export function initializeEventListeners() {
         }
     };
 
-    // --- Login Form ---
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const email = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            login(email, password);
-        });
-    }
-
     // --- Mobile Header & Menu ---
     addClickListener('add-item-btn-header', openItemModal);
     addClickListener('menu-suppliers', openSuppliersModal);
     addClickListener('menu-users', openUsersModal);
-    addClickListener('menu-packlist', () => showNotification('Funcionalidade de Packing List precisa ser adaptada para Supabase.', 'info')); // Adaptado
-    addClickListener('menu-invoice', () => showNotification('Funcionalidade de Invoice precisa ser adaptada para Supabase.', 'info')); // Adaptado
+    addClickListener('menu-packlist', () => window.open('gerador_packing_list.html', '_self'));
+    addClickListener('menu-invoice', () => window.open('gerenciador_invoice.html', '_self'));
     addClickListener('menu-purchase-orders', openPurchaseOrdersModal);
     addClickListener('logout-btn-menu', handleLogout);
 
@@ -65,17 +54,11 @@ export function initializeEventListeners() {
     const desktopOperationsBtn = document.getElementById('desktop-nav-operations');
     const operationsDropdown = document.getElementById('operations-dropdown');
 
-    console.log('Desktop Operations Button:', desktopOperationsBtn);
-    console.log('Operations Dropdown:', operationsDropdown);
-
     if (desktopOperationsBtn && operationsDropdown) {
         desktopOperationsBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            console.log('Desktop Operations Button clicked!');
             const isHidden = operationsDropdown.classList.toggle('hidden');
-            console.log('Dropdown hidden status after toggle:', isHidden);
             desktopOperationsBtn.classList.toggle('open', !isHidden);
-            console.log('Button open status after toggle:', !isHidden);
         });
 
         // Click outside to close
@@ -83,7 +66,6 @@ export function initializeEventListeners() {
             if (!desktopOperationsBtn.contains(e.target) && !operationsDropdown.contains(e.target)) {
                 operationsDropdown.classList.add('hidden');
                 desktopOperationsBtn.classList.remove('open');
-                console.log('Clicked outside, dropdown closed.');
             }
         });
     }
@@ -128,23 +110,28 @@ export function initializeEventListeners() {
     addClickListener('sim-preview-invoice-btn', previewSimulationAsInvoice);
     addClickListener('sim-save-draft-btn', saveSimulationAsDraft);
     addClickListener('sim-finalize-btn', createPurchaseOrder);
-    addChangeListener('sim-select-all-chk', async (event) => { // Adicionado async aqui
+    addChangeListener('sim-select-all-chk', (event) => {
         if (event.target.checked) {
             const availableItemsDivs = document.querySelectorAll('#sim-available-items .op-item-card.available:not(.added)');
             if (availableItemsDivs.length === 0) {
                 showNotification('Nenhum item disponível para adicionar.', 'info');
             } else {
-                // Esta lógica precisará ser adaptada para manipular a simulação de forma assíncrona
-                showNotification('Seleção de todos os itens na simulação precisa ser adaptada para Supabase.', 'warning');
+                availableItemsDivs.forEach(div => {
+                    const addButton = div.querySelector('.btn-add-op');
+                    if (addButton) {
+                        addButton.click();
+                    }
+                });
+                showNotification(`${availableItemsDivs.length} item(ns) adicionado(s) à simulação.`, 'success');
             }
             event.target.checked = false;
         }
     });
 
     // --- Dashboard Controls ---
-    addKeyupListener('searchInput', async () => await renderItems()); // Adicionado async/await
-    addChangeListener('sortSelect', async () => await renderItems()); // Adicionado async/await
-    addChangeListener('filterSelect', async () => await renderItems()); // Adicionado async/await
+    addKeyupListener('searchInput', renderItems);
+    addChangeListener('sortSelect', renderItems);
+    addChangeListener('filterSelect', renderItems);
 
     // --- Generic Modals ---
     addClickListener('confirm-modal-cancel-btn', () => closeModal('confirm-modal'));
@@ -186,11 +173,11 @@ export function initializeEventListeners() {
         feather.replace();
     });
 
-    addClickListener('menu-clear-data', async () => { // Adicionado async aqui
+    addClickListener('menu-clear-data', () => {
         showConfirmModal(
             'Limpar todos os dados?',
             'Esta ação é irreversível e irá apagar todos os itens, fornecedores e operações. Os dados de utilizador não serão afetados.',
-            async () => await clearAllData() // Chama a função assíncrona
+            clearAllData
         );
     });
 

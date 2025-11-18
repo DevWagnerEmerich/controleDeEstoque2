@@ -1034,7 +1034,9 @@ body.modal-is-open {
     border: 1px solid var(--border-color);
     width: 280px; /* Increased width */
     z-index: 40;
+    overflow: hidden;
     padding: 0.5rem;
+    display: block; /* Controlled by .hidden */
 }
 
 .dropdown-menu.hidden {

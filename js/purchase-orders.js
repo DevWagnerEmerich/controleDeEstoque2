@@ -1,21 +1,17 @@
 import { openModal, showNotification } from './ui.js';
-import { 
-    getAllPendingPurchaseOrders, updatePendingPurchaseOrder, deletePendingPurchaseOrder,
-    getAllSuppliers // Para a função viewPurchaseOrder
-} from './database.js';
-import { uploadAndProcessPoXml } from './import.js'; // Esta função precisará ser adaptada
-import { stockInPurchaseOrder } from './operations.js'; // Já adaptada
-import { appData } from './main.js'; // Importa a variável global de dados
+import { pendingPurchaseOrders, saveData, suppliers, loadPendingPurchaseOrders } from './database.js';
+import { uploadAndProcessPoXml } from './import.js';
+import { stockInPurchaseOrder } from './operations.js';
 
-export async function openPurchaseOrdersModal() { // Adicionado async aqui
-    await renderPurchaseOrders(); // Espera a renderização
+export function openPurchaseOrdersModal() {
+    renderPurchaseOrders();
     openModal('purchase-orders-modal');
 }
 
-async function renderPurchaseOrders() { // Adicionado async aqui
+function renderPurchaseOrders() {
     const container = document.getElementById('purchase-orders-list-container');
     
-    let pendingOrders = appData.pendingPurchaseOrders.filter(op => op.status !== 'completed'); // Usa appData.pendingPurchaseOrders
+    let pendingOrders = pendingPurchaseOrders.filter(op => op.status !== 'completed');
 
     // Sort by date in descending order (newest first)
     pendingOrders.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -46,7 +42,7 @@ async function renderPurchaseOrders() { // Adicionado async aqui
         return `
         <div class="po-item-card">
             <div class="po-item-info">
-                <p class="po-item-id">ID: ${order.po_id}</p>
+                <p class="po-item-id">ID: ${order.id}</p>
                 <p class="po-item-date">Data: ${new Date(order.date).toLocaleDateString('pt-BR')}</p>
                 <p class="po-item-status">Status: ${statusBadge}</p>
             </div>
@@ -59,14 +55,14 @@ async function renderPurchaseOrders() { // Adicionado async aqui
 
 window.attachXml = (orderId) => {
     // --- DATA INTEGRITY CHECK ---
-    const order = appData.pendingPurchaseOrders.find(op => op.id === orderId); // Usa appData.pendingPurchaseOrders
+    const order = pendingPurchaseOrders.find(op => op.id === orderId);
     if (!order) {
         showNotification("Erro crítico: Ordem de compra não encontrada para verificação.", "danger");
         return;
     }
     for (const item of order.items) {
-        if (!item.code || !item.supplier_id) { // Ajustado para supplier_id
-            const errorMessage = `Erro de Integridade de Dados na OC ${order.po_id}: O item "${item.name}" (ID: ${item.id}) está sem 'código' ou 'ID do fornecedor'. Os dados podem ter sido perdidos durante a criação ou edição da OC.`; // Ajustado para po_id
+        if (!item.code || !item.supplierId) {
+            const errorMessage = `Erro de Integridade de Dados na OC ${orderId}: O item "${item.name}" (ID: ${item.id}) está sem 'código' ou 'ID do fornecedor'. Os dados podem ter sido perdidos durante a criação ou edição da OC.`;
             showNotification(errorMessage, "danger", 10000);
             console.error(errorMessage, "Item data:", item);
             return; // Stop the process
@@ -79,97 +75,84 @@ window.attachXml = (orderId) => {
     fileInput.click();
 };
 
-window.finalizeAttachments = async (orderId) => { // Adicionado async aqui
-    const order = appData.pendingPurchaseOrders.find(op => op.id === orderId); // Usa appData.pendingPurchaseOrders
-    if (!order) {
+window.finalizeAttachments = (orderId) => {
+    const orderIndex = pendingPurchaseOrders.findIndex(op => op.id === orderId);
+    if (orderIndex === -1) {
         showNotification("Ordem de compra não encontrada.", "danger");
         return;
     }
 
-    if (!order.xmlAttached) { // Assume que 'xmlAttached' é uma propriedade da ordem
+    if (!pendingPurchaseOrders[orderIndex].xmlAttached) {
         showNotification("Anexe pelo menos um arquivo XML antes de finalizar.", "warning");
         return;
     }
 
-    const updatedOrder = await updatePendingPurchaseOrder(orderId, { status: 'pending_stock_entry' }); // Atualiza no Supabase
-    if (updatedOrder) {
-        showNotification("Ordem de Compra finalizada. Pronta para entrada no estoque.", "success");
-        await renderPurchaseOrders(); // Espera a renderização
-    } else {
-        showNotification("Erro ao finalizar anexos da Ordem de Compra!", "danger");
-    }
+    pendingPurchaseOrders[orderIndex].status = 'pending_stock_entry';
+    saveData();
+    renderPurchaseOrders();
+    showNotification("Ordem de Compra finalizada. Pronta para entrada no estoque.", "success");
 };
 
-window.stockIn = async (orderId) => { // Adicionado async aqui
-    await stockInPurchaseOrder(orderId); // stockInPurchaseOrder já é assíncrona e atualiza a UI
+window.stockIn = (orderId) => {
+    stockInPurchaseOrder(orderId);
 };
 
-async function handlePoXmlUpload(event) { // Adicionado async aqui
+function handlePoXmlUpload(event) {
     const files = event.target.files;
     const orderId = event.target.getAttribute('data-order-id');
-    const fileInput = event.target;
+    const fileInput = event.target; // Keep a reference to the input element
 
     if (!files.length || !orderId) {
         return;
     }
 
-    const order = appData.pendingPurchaseOrders.find(op => op.id === orderId); // Usa appData.pendingPurchaseOrders
+    const order = pendingPurchaseOrders.find(op => op.id === orderId);
     if (!order) {
         showNotification("Ordem de compra não encontrada.", "danger");
         return;
     }
 
+    const numFiles = files.length; // Store the number of files
+
     const uploadPromises = Array.from(files).map(file => {
-        return new Promise(async (resolve, reject) => { // Adicionado async aqui
-            // uploadAndProcessPoXml precisará ser adaptada para Supabase
-            // Por enquanto, apenas simula o processamento
-            showNotification(`Processando XML ${file.name} para OC ${order.po_id}...`, 'info'); // Ajustado para po_id
-            // Simula um atraso
-            await new Promise(r => setTimeout(r, 1000));
-            // Aqui você chamaria a função real de upload e processamento
-            // const processedData = await uploadAndProcessPoXml(file, orderId);
-            // if (processedData) {
-            //     // Atualizar a ordem de compra com os dados do XML processado
-            //     // await updatePendingPurchaseOrder(orderId, { xmlData: processedData, xmlAttached: true });
-            //     resolve();
-            // } else {
-            //     reject(new Error('Falha ao processar XML.'));
-            // }
-            order.xmlAttached = true; // Simula que o XML foi anexado
-            await updatePendingPurchaseOrder(orderId, { xmlAttached: true }); // Atualiza no Supabase
-            showNotification(`XML ${file.name} processado para OC ${order.po_id}.`, 'success'); // Ajustado para po_id
-            resolve();
+        return new Promise((resolve, reject) => {
+            uploadAndProcessPoXml(file, orderId, resolve, reject);
         });
     });
 
-    Promise.all(uploadPromises).then(async () => { // Adicionado async aqui
-        await renderPurchaseOrders(); // Espera a renderização
-        fileInput.value = null;
-        fileInput.removeAttribute('data-order-id');
+    Promise.all(uploadPromises).then(() => {
+        // Force a reload of the pending POs from localStorage to ensure consistency
+        loadPendingPurchaseOrders();
+        renderPurchaseOrders();
+        // The notification is now shown for each individual file processed.
     }).catch(error => {
         console.error("Ocorreu um erro durante o processamento dos XMLs:", error);
         showNotification("Ocorreu um erro durante o processamento de um ou mais XMLs.", "danger");
 
+        // Also clean up on error
         fileInput.value = null;
         fileInput.removeAttribute('data-order-id');
     });
 }
 
-window.viewPurchaseOrder = async (orderId) => { // Adicionado async aqui
-    const order = appData.pendingPurchaseOrders.find(op => op.id === orderId); // Usa appData.pendingPurchaseOrders
+window.viewPurchaseOrder = (orderId) => {
+    // Read directly from localStorage to ensure data is fresh
+    const pendingPOsString = localStorage.getItem('stockPendingPOs_v1');
+    const localPendingPOs = pendingPOsString ? JSON.parse(pendingPOsString) : [];
+    
+    const order = localPendingPOs.find(op => op.id === orderId);
     if (!order) {
-        showNotification("Ordem de compra não encontrada.", "danger");
+        showNotification("Ordem de compra não encontrada no armazenamento local.", "danger");
         return;
     }
 
-    const dataForDocument = {
+    const documentData = {
         operation: order,
-        allSuppliers: appData.suppliers // Usa appData.suppliers
+        allSuppliers: suppliers 
     };
 
-    // localStorage.setItem('currentDocument', JSON.stringify(dataForDocument)); // Remover uso de localStorage
-    // window.open('gerenciador_invoice.html?origin=purchase-orders', '_self');
-    showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+    localStorage.setItem('currentDocument', JSON.stringify(documentData));
+    window.open('gerenciador_invoice.html?origin=purchase-orders', '_self');
 };
 
 document.addEventListener('DOMContentLoaded', () => {

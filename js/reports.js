@@ -1,10 +1,10 @@
-import { openModal, closeModal, getStatus, formatCurrency, showNotification } from './ui.js';
+import { items, movements, suppliers } from './database.js';
+import { openModal, closeModal, getStatus, formatCurrency } from './ui.js';
 import { checkPermission } from './auth.js';
-import { appData } from './main.js'; // Importa a variável global de dados
 
 let charts = {};
 
-export function openReportsModal() {
+function openReportsModal() {
     if (!checkPermission('reports')) {
         showNotification('Não tem permissão para ver relatórios.', 'danger');
         return;
@@ -17,7 +17,7 @@ export function openReportsModal() {
     }
 }
 
-export function switchReportTab(button, tabName) {
+function switchReportTab(button, tabName) {
     document.querySelectorAll('.report-tab').forEach(tab => tab.classList.remove('active'));
     button.classList.add('active');
     document.querySelectorAll('.report-tab-content').forEach(content => content.classList.remove('active'));
@@ -37,12 +37,12 @@ export function switchReportTab(button, tabName) {
     }
 }
 
-export function renderOverviewReports() {
+function renderOverviewReports() {
     if (charts.valueChart) charts.valueChart.destroy();
     if (charts.statusChart) charts.statusChart.destroy();
 
-    const valueData = appData.items.reduce((acc, item) => { // Usa appData.items
-        const value = item.quantity * item.cost_price; // Ajustado para cost_price
+    const valueData = items.reduce((acc, item) => {
+        const value = item.quantity * item.costPrice;
         acc['Valor Total em Stock'] = (acc['Valor Total em Stock'] || 0) + value;
         return acc;
     }, {});
@@ -53,7 +53,7 @@ export function renderOverviewReports() {
         options: { responsive: true, maintainAspectRatio: false }
     });
 
-    const statusData = appData.items.reduce((acc, item) => { // Usa appData.items
+    const statusData = items.reduce((acc, item) => {
         const status = getStatus(item).text;
         acc[status] = (acc[status] || 0) + 1;
         return acc;
@@ -71,28 +71,28 @@ export function renderOverviewReports() {
 function renderReportsMovements() {
     const container = document.getElementById('reports-movements-history');
     container.innerHTML = '';
-    const recentMovements = [...appData.movements].sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10); // Usa appData.movements e created_at
+    const recentMovements = [...movements].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
     if(recentMovements.length === 0) {
         container.innerHTML = `<p class="text-secondary text-center py-4">Nenhuma movimentação registada.</p>`;
         return;
     }
     recentMovements.forEach(mov => {
-        const item = appData.items.find(i => i.id === mov.item_id); // Usa appData.items e item_id
+        const item = items.find(i => i.id === mov.itemId);
         const div = document.createElement('div');
         div.className = `report-movement-item ${mov.type}`;
         div.innerHTML = `
             <div class="movement-info">
                 <span class="movement-name">${item ? item.name : 'Item Excluído'}</span>
                 <span class="movement-qty">(${mov.quantity} un.)</span>
-                ${mov.operation_id ? `<span class="movement-op">(${mov.operation_id})</span>` : ''}
+                ${mov.operationId ? `<span class="movement-op">(${mov.operationId})</span>` : ''}
             </div>
-            <span class="movement-date">${new Date(mov.created_at).toLocaleString('pt-BR')}</span>
+            <span class="movement-date">${new Date(mov.date).toLocaleString('pt-BR')}</span>
         `;
         container.appendChild(div);
     });
 }
 
-export function renderProductAnalysisReports() {
+function renderProductAnalysisReports() {
     const periodDays = document.getElementById('reports-period-filter').value;
     const now = new Date();
     const startDate = new Date();
@@ -101,11 +101,11 @@ export function renderProductAnalysisReports() {
     }
 
     const filteredMovements = (periodDays === 'all')
-        ? appData.movements.filter(m => m.type === 'out') // Usa appData.movements
-        : appData.movements.filter(m => m.type === 'out' && new Date(m.created_at) >= startDate); // Usa appData.movements e created_at
+        ? movements.filter(m => m.type === 'out')
+        : movements.filter(m => m.type === 'out' && new Date(m.date) >= startDate);
     
     const salesByQuantity = filteredMovements.reduce((acc, mov) => {
-        acc[mov.item_id] = (acc[mov.item_id] || 0) + mov.quantity; // Ajustado para item_id
+        acc[mov.itemId] = (acc[mov.itemId] || 0) + mov.quantity;
         return acc;
     }, {});
     
@@ -118,12 +118,12 @@ export function renderProductAnalysisReports() {
         .slice(0, 5);
 
     const packageFormatter = (itemId, value) => {
-        const item = appData.items.find(i => i.id === itemId); // Usa appData.items
-        if (!item || !item.units_per_package) { // Ajustado para units_per_package
+        const item = items.find(i => i.id === itemId);
+        if (!item || !item.unitsPerPackage) {
             return `${value} un.`;
         }
-        const packagesSold = Math.floor(value / item.units_per_package); // Ajustado para units_per_package
-        const packageLabel = item.package_type === 'fardo' ? (packagesSold > 1 ? 'fardos' : 'fardo') : (packagesSold > 1 ? 'caixas' : 'caixa'); // Ajustado para package_type
+        const packagesSold = Math.floor(value / item.unitsPerPackage);
+        const packageLabel = item.packageType === 'fardo' ? (packagesSold > 1 ? 'fardos' : 'fardo') : (packagesSold > 1 ? 'caixas' : 'caixa');
         return `${packagesSold} ${packageLabel}`;
     };
 
@@ -140,10 +140,10 @@ function renderRankingList(containerId, data, label, formatter) {
     }
     const maxValue = data.length > 0 ? data[0][1] : 0;
     data.forEach(([itemId, value]) => {
-        const item = appData.items.find(i => i.id === itemId); // Usa appData.items
+        const item = items.find(i => i.id === itemId);
         if (!item) return;
         const percentage = maxValue > 0 ? (value / maxValue * 100) : 0;
-        const formattedValue = formatter ? formatter(itemId, value) : value;
+        const formattedValue = formatter(itemId, value);
         const div = document.createElement('div');
         div.className = 'ranking-item';
         div.innerHTML = `
@@ -159,7 +159,7 @@ function renderRankingList(containerId, data, label, formatter) {
     });
 }
 
-export function renderDailyMovementsReport() {
+function renderDailyMovementsReport() {
     const container = document.getElementById('daily-movements-list');
     const datePicker = document.getElementById('daily-movements-date-picker');
     const selectedDate = new Date(datePicker.value + 'T00:00:00');
@@ -169,12 +169,12 @@ export function renderDailyMovementsReport() {
     const startOfDay = new Date(selectedDate.setHours(0, 0, 0, 0));
     const endOfDay = new Date(selectedDate.setHours(23, 59, 59, 999));
 
-    const filteredMovements = appData.movements // Usa appData.movements
+    const filteredMovements = movements
         .filter(mov => {
-            const movDate = new Date(mov.created_at); // Ajustado para created_at
+            const movDate = new Date(mov.date);
             return movDate >= startOfDay && movDate <= endOfDay;
         })
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); // Ajustado para created_at
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     if (filteredMovements.length === 0) {
         container.innerHTML = `<div class="panel-empty-state">
@@ -186,8 +186,8 @@ export function renderDailyMovementsReport() {
     }
 
     filteredMovements.forEach(mov => {
-        const item = appData.items.find(i => i.id === mov.item_id); // Usa appData.items e item_id
-        const supplier = item ? appData.suppliers.find(s => s.id === item.supplier_id) : null; // Usa appData.suppliers e supplier_id
+        const item = items.find(i => i.id === mov.itemId);
+        const supplier = item ? suppliers.find(s => s.id === item.supplierId) : null;
 
         const isOut = mov.type === 'out';
         const sign = isOut ? '-' : '+';
@@ -200,7 +200,7 @@ export function renderDailyMovementsReport() {
             <div class="movement-details">
                 <div class="movement-header">
                     <span class="movement-name">${item ? item.name : 'Item Excluído'}</span>
-                    <span class="movement-time">${new Date(mov.created_at).toLocaleTimeString('pt-BR')}</span>
+                    <span class="movement-time">${new Date(mov.date).toLocaleTimeString('pt-BR')}</span>
                 </div>
                 <p class="movement-reason">${mov.reason || 'N/A'}</p>
                 <div class="movement-stats">
@@ -215,3 +215,5 @@ export function renderDailyMovementsReport() {
     });
     feather.replace();
 }
+
+export { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport };

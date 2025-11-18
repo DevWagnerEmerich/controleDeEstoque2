@@ -1,26 +1,19 @@
-import { checkPermission, currentUserProfile } from './auth.js';
-import { 
-    getAllItems, getAllSuppliers, getAllMovements, getAllOperationsHistory, getAllPendingPurchaseOrders, getUserProfiles,
-    addItem, updateItem, deleteItem, addSupplier, updateSupplier, deleteSupplier, addMovement, addOperationToHistory,
-    addPendingPurchaseOrder, updatePendingPurchaseOrder, deletePendingPurchaseOrder,
-    clearAllData,
-    loadAllData
-} from './database.js';
-import { appData } from './main.js'; // Importa a variável global de dados
+import { checkPermission, currentUser, hashPassword, generateSalt } from './auth.js';
+import { items, suppliers, movements, saveData, users, saveUsers, operationsHistory } from './database.js';
 
 document.addEventListener('operation-saved', () => {
     openOperationsHistoryModal();
 });
 
-export async function applyPermissionsToUI() {
-    if (!currentUserProfile) return;
+function applyPermissionsToUI() {
+    if (!currentUser) return;
 
     // Mobile menu username
-    document.getElementById('menu-username').textContent = currentUserProfile.username;
+    document.getElementById('menu-username').textContent = currentUser.username;
     // Desktop nav username
-    document.getElementById('desktop-username').textContent = currentUserProfile.username;
+    document.getElementById('desktop-username').textContent = currentUser.username;
 
-    const isAdmin = currentUserProfile.role === 'admin';
+    const isAdmin = currentUser.role === 'admin';
     
     // Toggle admin-only buttons
     document.getElementById('menu-users').style.display = isAdmin ? 'flex' : 'none';
@@ -30,7 +23,7 @@ export async function applyPermissionsToUI() {
     document.getElementById('add-item-btn-header').disabled = !checkPermission('add');
     document.getElementById('desktop-add-item-btn').disabled = !checkPermission('add');
     
-    await renderItems(); // Renderiza itens após aplicar permissões
+    renderItems();
 }
 
 export function normalizeCnpj(cnpj) {
@@ -63,31 +56,31 @@ function formatNcm(value) {
     return value;
 }
 
-export const getStatus = (item) => {
+const getStatus = (item) => {
     if (item.quantity <= 0) return { text: 'Esgotado', class: 'bg-gray-200 text-gray-800', level: 3 };
-    if (item.quantity <= item.min_quantity) return { text: 'Crítico', class: 'bg-red-100 text-red-800', level: 2 };
-    if (item.quantity <= item.min_quantity * 1.2) return { text: 'Baixo', class: 'bg-yellow-100 text-yellow-800', level: 1 };
+    if (item.quantity <= item.minQuantity) return { text: 'Crítico', class: 'bg-red-100 text-red-800', level: 2 };
+    if (item.quantity <= item.minQuantity * 1.2) return { text: 'Baixo', class: 'bg-yellow-100 text-yellow-800', level: 1 };
     return { text: 'OK', class: 'bg-green-100 text-green-800', level: 0 };
 };
 
-export const formatCurrency = (value, currency = 'USD') => {
+const formatCurrency = (value, currency = 'USD') => {
     const options = { style: 'currency', currency: currency, minimumFractionDigits: 2 };
     const locale = currency === 'BRL' ? 'pt-BR' : 'en-US';
     return new Intl.NumberFormat(locale, options).format(value || 0);
 }
 
-export async function renderItems() {
+function renderItems() {
     const gridContainer = document.getElementById('items-grid-container');
     const emptyState = document.getElementById('empty-state');
     gridContainer.innerHTML = '';
 
-    let filteredItems = [...appData.items]; // Usa appData.items
+    let filteredItems = [...items];
     
     const searchTerm = document.getElementById('searchInput').value.toLowerCase();
     if (searchTerm) {
         filteredItems = filteredItems.filter(item => 
             item.name.toLowerCase().includes(searchTerm) || 
-            (item.name_en && item.name_en.toLowerCase().includes(searchTerm)) ||
+            (item.nameEn && item.nameEn.toLowerCase().includes(searchTerm)) ||
             (item.code && item.code.toLowerCase().includes(searchTerm))
         );
     }
@@ -121,8 +114,8 @@ export async function renderItems() {
 
     filteredItems.forEach(item => {
         const status = getStatus(item);
-        const boxes = (item.units_per_package > 0) ? Math.floor(item.quantity / item.units_per_package) : 0;
-        const packageLabel = item.package_type === 'fardo' ? 'Fardos' : 'Caixas';
+        const boxes = (item.unitsPerPackage > 0) ? Math.floor(item.quantity / item.unitsPerPackage) : 0;
+        const packageLabel = item.packageType === 'fardo' ? 'Fardos' : 'Caixas';
         const stockDisplay = `${boxes} ${packageLabel}`;
 
         const card = document.createElement('div');
@@ -140,7 +133,7 @@ export async function renderItems() {
                 <p class="card-code">${item.code || 'N/A'}</p>
                 <div class="card-info-row">
                     <span class="card-info-label">Preço Venda</span>
-                    <span class="card-info-value">${formatCurrency(item.sale_price, 'BRL')}</span>
+                    <span class="card-info-value">${formatCurrency(item.salePrice, 'BRL')}</span>
                 </div>
                 <div class="card-info-row">
                     <span class="card-info-label">Stock</span>
@@ -157,24 +150,7 @@ export async function renderItems() {
         card.querySelector('.card-body').addEventListener('click', () => openItemDetailsModal(item.id));
         card.querySelector('[data-action="open-stock"]').addEventListener('click', () => openStockModal(item.id));
         card.querySelector('[data-action="open-item"]').addEventListener('click', (e) => { e.stopPropagation(); openItemModal(item.id); });
-        card.querySelector('[data-action="delete-item"]').addEventListener('click', (e) => { 
-            e.stopPropagation(); 
-            const itemToDelete = appData.items.find(i => i.id === item.id);
-            if (!itemToDelete) return;
-            showConfirmModal(
-                'Excluir Item?',
-                `Tem a certeza de que deseja excluir o item "${itemToDelete.name}"?`,
-                async () => {
-                    const success = await deleteItem(item.id); // Chama a função importada de database.js
-                    if (success) {
-                        showNotification('Item excluído com sucesso!', 'danger');
-                        await fullUpdate();
-                    } else {
-                        showNotification('Erro ao excluir item!', 'danger');
-                    }
-                }
-            );
-        });
+        card.querySelector('[data-action="delete-item"]').addEventListener('click', (e) => { e.stopPropagation(); deleteItem(item.id); });
 
         gridContainer.appendChild(card);
     });
@@ -185,14 +161,14 @@ export async function renderItems() {
 
 
 
-export async function renderDashboardStats() {
+function renderDashboardStats() {
     const statsContainer = document.getElementById('dashboard-stats');
     if (!statsContainer) return;
 
-    const totalItems = appData.items.length; // Usa appData.items
-    const totalValue = appData.items.reduce((acc, item) => acc + (item.quantity * item.cost_price), 0); // Usa appData.items
-    const lowStockItems = appData.items.filter(item => item.quantity > 0 && item.quantity <= item.min_quantity).length; // Usa appData.items
-    const outOfStockItems = appData.items.filter(item => item.quantity <= 0).length; // Usa appData.items
+    const totalItems = items.length;
+    const totalValue = items.reduce((acc, item) => acc + (item.quantity * item.costPrice), 0);
+    const lowStockItems = items.filter(item => item.quantity > 0 && item.quantity <= item.minQuantity).length;
+    const outOfStockItems = items.filter(item => item.quantity <= 0).length;
 
     const stats = [
         { label: 'Valor Total do Stock', value: formatCurrency(totalValue, 'BRL'), icon: 'dollar-sign' },
@@ -216,32 +192,28 @@ export async function renderDashboardStats() {
     feather.replace();
 }
 
-export async function fullUpdate() {
-    // Recarrega todos os dados da base de dados
-    const loadedData = await loadAllData();
-    Object.assign(appData, loadedData);
-
-    await renderDashboardStats();
-    await renderItems();
-    await renderOperationsHistory(); // Atualiza o histórico na aba de relatórios
-    await renderOperationsHistoryModal(); // Atualiza o conteúdo do modal de histórico
-    // saveData() não é mais necessário aqui, pois as funções de manipulação já salvam no BD
+function fullUpdate() {
+    renderDashboardStats();
+    renderItems();
+    renderOperationsHistory(); // Atualiza o histórico na aba de relatórios
+    renderOperationsHistoryModal(); // Atualiza o conteúdo do modal de histórico
+    saveData();
 }
 
-export function openModal(id) {
+function openModal(id) {
     const modal = document.getElementById(id);
     if (modal) {
         document.body.classList.add('modal-is-open');
-        modal.style.display = 'flex'; // Correção: Força a exibição do modal
+        modal.classList.add('is-open');
         feather.replace();
     }
 }
 
-export function closeModal(id) {
+function closeModal(id) {
     const modal = document.getElementById(id);
     if (modal) {
         document.body.classList.remove('modal-is-open');
-        modal.style.display = 'none'; // Correção: Força o modal a ser escondido
+        modal.classList.remove('is-open');
 
         // Limpa o hash da URL para evitar que o modal de histórico seja reaberto
         history.pushState("", document.title, window.location.pathname + window.location.search);
@@ -261,7 +233,7 @@ export function closeModal(id) {
     }
 }
 
-export function showConfirmModal(title, text, onConfirm) {
+function showConfirmModal(title, text, onConfirm) {
     document.getElementById('confirm-modal-title').innerText = title;
     document.getElementById('confirm-modal-text').innerText = text;
 
@@ -282,32 +254,32 @@ export function showConfirmModal(title, text, onConfirm) {
     openModal('confirm-modal');
 }
 
-export async function openItemDetailsModal(id) {
-    const item = appData.items.find(i => i.id === id); // Usa appData.items
+function openItemDetailsModal(id) {
+    const item = items.find(i => i.id === id);
     if (!item) return;
 
-    const supplier = appData.suppliers.find(s => s.id === item.supplier_id); // Usa appData.suppliers
-    const margin = item.cost_price > 0 ? ((item.sale_price - item.cost_price) / item.cost_price) * 100 : 0;
-    const totalBoxes = (item.units_per_package > 0) ? Math.floor(item.quantity / item.units_per_package) : 0;
+    const supplier = suppliers.find(s => s.id === item.supplierId);
+    const margin = item.costPrice > 0 ? ((item.salePrice - item.costPrice) / item.costPrice) * 100 : 0;
+    const totalBoxes = (item.unitsPerPackage > 0) ? Math.floor(item.quantity / item.unitsPerPackage) : 0;
 
     document.getElementById('details-item-name').innerText = item.name;
-    document.getElementById('details-item-name-en').innerText = item.name_en || '';
+    document.getElementById('details-item-name-en').innerText = item.nameEn || '';
     document.getElementById('details-item-image').src = item.image || `https://placehold.co/300x300/e0e7ff/4f46e5?text=${item.name.charAt(0)}`;
-    document.getElementById('details-item-cost').innerText = formatCurrency(item.cost_price, 'BRL');
-    document.getElementById('details-item-sale').innerText = formatCurrency(item.sale_price, 'BRL');
+    document.getElementById('details-item-cost').innerText = formatCurrency(item.costPrice, 'BRL');
+    document.getElementById('details-item-sale').innerText = formatCurrency(item.salePrice, 'BRL');
     document.getElementById('details-item-margin').innerText = `${margin.toFixed(1)}%`;
     document.getElementById('details-item-description').innerText = item.description || 'Nenhuma descrição fornecida.';
     document.getElementById('details-item-quantity').innerText = item.quantity;
     document.getElementById('details-item-supplier').innerText = supplier ? supplier.name : 'Não especificado';
     document.getElementById('details-item-code').innerText = item.code || 'N/A';
     document.getElementById('details-item-ncm').innerText = item.ncm ? formatNcm(item.ncm) : 'N/A';
-    document.getElementById('details-item-qty-unit').innerText = item.unit_measure_value ? item.unit_measure_value.toFixed(2) : 'N/A'; // Ajustado para unit_measure_value
+    document.getElementById('details-item-qty-unit').innerText = item.qtyUnit ? item.qtyUnit.toFixed(2) : 'N/A';
     document.getElementById('details-item-boxes').innerText = totalBoxes;
-    document.getElementById('details-package-type-label').innerText = `Total de ${item.package_type}s`;
+    document.getElementById('details-package-type-label').innerText = `Total de ${item.packageType}s`;
 
     const movementsContainer = document.getElementById('details-item-history');
     movementsContainer.innerHTML = '';
-    const itemMovements = appData.movements.filter(m => m.item_id === id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5); // Usa appData.movements e created_at
+    const itemMovements = movements.filter(m => m.itemId === id).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
 
     if (itemMovements.length === 0) {
         movementsContainer.innerHTML = `<p class="text-secondary text-center py-4">Nenhuma movimentação para este item.</p>`;
@@ -319,9 +291,9 @@ export async function openItemDetailsModal(id) {
                 <div class="movement-info">
                     <span class="font-bold uppercase">${mov.type === 'in' ? 'Entrada' : 'Saída'}</span>
                     <span class="text-secondary">(${mov.quantity} un.)</span>
-                    ${mov.operation_id ? `<span class="movement-op">(${mov.operation_id})</span>` : ''}
+                    ${mov.operationId ? `<span class="movement-op">(${mov.operationId})</span>` : ''}
                 </div>
-                <span class="movement-date">${new Date(mov.created_at).toLocaleString('pt-BR')}</span>
+                <span class="movement-date">${new Date(mov.date).toLocaleString('pt-BR')}</span>
             `;
             movementsContainer.appendChild(div);
         });
@@ -330,7 +302,7 @@ export async function openItemDetailsModal(id) {
     openModal('item-details-modal');
 }
 
-export async function openItemModal(id = null) {
+async function openItemModal(id = null) {
     if (id && !checkPermission('edit')) {
         showNotification('Não tem permissão para editar itens.', 'danger');
         return;
@@ -347,8 +319,7 @@ export async function openItemModal(id = null) {
 
     const supplierSelect = document.getElementById('itemSupplier');
     supplierSelect.innerHTML = `<option value="">Sem fornecedor</option>`;
-    // Popula o select de fornecedores com dados do Supabase
-    appData.suppliers.forEach(s => { // Usa appData.suppliers
+    suppliers.forEach(s => {
         supplierSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
     });
 
@@ -366,25 +337,25 @@ export async function openItemModal(id = null) {
     codeInput.addEventListener('input', sanitizeNumericInput);
 
     if (id) {
-        const item = appData.items.find(i => i.id === id); // Usa appData.items
+        const item = items.find(i => i.id === id);
         if (item) {
             document.getElementById('item-modal-title').innerText = 'Editar Item';
             document.getElementById('itemId').value = item.id;
             document.getElementById('itemName').value = item.name;
-            document.getElementById('itemNameEn').value = item.name_en;
+            document.getElementById('itemNameEn').value = item.nameEn;
             document.getElementById('itemCode').value = item.code;
             document.getElementById('itemNcm').value = formatNcm(item.ncm);
             document.getElementById('itemDescription').value = item.description;
-            const boxes = (item.units_per_package > 0) ? (item.quantity / item.units_per_package) : 0;
+            const boxes = (item.unitsPerPackage > 0) ? (item.quantity / item.unitsPerPackage) : 0;
             document.getElementById('quantityInBoxes').value = boxes;
-            document.getElementById('itemMinQuantity').value = item.min_quantity;
-            document.getElementById('itemCostPrice').value = item.cost_price;
-            document.getElementById('itemSalePrice').value = item.sale_price;
-            document.getElementById('itemSupplier').value = item.supplier_id;
-            document.getElementById('packageType').value = item.package_type || 'caixa';
-            document.getElementById('unitsPerPackage').value = item.units_per_package;
-            document.getElementById('unitMeasureValue').value = item.unit_measure_value;
-            document.getElementById('unitMeasureType').value = item.unit_measure_type || 'g';
+            document.getElementById('itemMinQuantity').value = item.minQuantity;
+            document.getElementById('itemCostPrice').value = item.costPrice;
+            document.getElementById('itemSalePrice').value = item.salePrice;
+            document.getElementById('itemSupplier').value = item.supplierId;
+            document.getElementById('packageType').value = item.packageType || 'caixa';
+            document.getElementById('unitsPerPackage').value = item.unitsPerPackage;
+            document.getElementById('unitMeasureValue').value = item.unitMeasureValue;
+            document.getElementById('unitMeasureType').value = item.unitMeasureType || 'g';
             if (item.image) {
                 const preview = document.getElementById('imagePreview');
                 preview.src = item.image;
@@ -463,52 +434,75 @@ export async function openItemModal(id = null) {
         // --- 3. Montagem do Objeto de Dados ---
         const itemData = {
             name,
-            name_en: document.getElementById('itemNameEn').value, // Ajustado para name_en
+            nameEn: document.getElementById('itemNameEn').value,
             code: document.getElementById('itemCode').value,
             ncm: document.getElementById('itemNcm').value.replace(/\D/g, ''),
             description: document.getElementById('itemDescription').value,
-            supplier_id: document.getElementById('itemSupplier').value, // Ajustado para supplier_id
-            package_type: document.getElementById('packageType').value, // Ajustado para package_type
-            units_per_package: unitsPerPackage, // Ajustado para units_per_package
+            supplierId: document.getElementById('itemSupplier').value,
+            packageType: document.getElementById('packageType').value,
+            unitsPerPackage,
             quantity: quantityInBoxes * unitsPerPackage,
-            min_quantity: minQuantity, // Ajustado para min_quantity
-            cost_price: parsedCostPrice, // Ajustado para cost_price
-            sale_price: parsedSalePrice, // Ajustado para sale_price
-            unit_measure_value: isNaN(unitMeasureValue) ? 0 : unitMeasureValue, // Ajustado para unit_measure_value
-            unit_measure_type: document.getElementById('unitMeasureType').value, // Ajustado para unit_measure_type
-            updated_at: new Date().toISOString(),
-            image: imageBase64 // Nova imagem ou null
+            minQuantity,
+            costPrice: parsedCostPrice,
+            salePrice: parsedSalePrice,
+            unitMeasureValue: isNaN(unitMeasureValue) ? 0 : unitMeasureValue,
+            unitMeasureType: document.getElementById('unitMeasureType').value,
+            updatedAt: new Date().toISOString(),
         };
 
         // --- 4. Salvamento ---
         if (itemId) { // Editando
-            const updatedItem = await updateItem(itemId, itemData); // Chama a função do Supabase
-            if (updatedItem) {
+            const itemIndex = items.findIndex(i => i.id === itemId);
+            if (itemIndex > -1) {
+                const existingItem = items[itemIndex];
+                items[itemIndex] = { 
+                    ...existingItem, 
+                    ...itemData, 
+                    image: imageBase64 || existingItem.image // Mantém a imagem antiga se nenhuma nova for enviada
+                };
                 showNotification('Item atualizado com sucesso!', 'success');
-            } else {
-                showNotification('Erro ao atualizar item!', 'danger');
             }
         } else { // Criando
-            const newItem = await addItem(itemData); // Chama a função do Supabase
-            if (newItem) {
-                showNotification('Item adicionado com sucesso!', 'success');
-            } else {
-                showNotification('Erro ao adicionar item!', 'danger');
-            }
+            const newItem = {
+                ...itemData,
+                id: `item_${Date.now()}`,
+                image: imageBase64
+            };
+            items.push(newItem);
+            showNotification('Item adicionado com sucesso!', 'success');
         }
 
-        await fullUpdate(); // Espera a atualização completa
+        fullUpdate();
         closeModal('item-modal');
     };
 
     openModal('item-modal');
 }
 
-// A função deleteItem agora é importada de database.js e usada diretamente.
-// A lógica de confirmação foi movida para o event listener em renderItems.
+function deleteItem(id) {
+    if (!checkPermission('delete')) {
+         showNotification('Não tem permissão para excluir itens.', 'danger');
+        return;
+    }
+    const itemToDelete = items.find(i => i.id === id);
+    if (!itemToDelete) return;
+    
+    showConfirmModal(
+        'Excluir Item?', 
+        `Tem a certeza de que deseja excluir o item "${itemToDelete.name}"?`, 
+        () => {
+            const itemIndex = items.findIndex(i => i.id === id);
+            if (itemIndex > -1) {
+                items.splice(itemIndex, 1);
+            }
+            showNotification('Item excluído com sucesso!', 'danger');
+            fullUpdate();
+        }
+    );
+}
 
-export async function openSuppliersModal() {
-    await renderSuppliersList(); // Espera a renderização
+function openSuppliersModal() {
+    renderSuppliersList();
     resetSupplierForm();
 
     const supplierForm = document.getElementById('supplier-form');
@@ -518,7 +512,7 @@ export async function openSuppliersModal() {
     cnpjInput.addEventListener('input', (e) => { e.target.value = formatCnpj(e.target.value); });
     phoneInput.addEventListener('input', (e) => { e.target.value = formatPhone(e.target.value); });
 
-    supplierForm.onsubmit = async (e) => { // Adicionado async aqui
+    supplierForm.onsubmit = (e) => {
         e.preventDefault();
         const id = document.getElementById('supplierId').value;
         const name = document.getElementById('supplierName').value;
@@ -539,37 +533,36 @@ export async function openSuppliersModal() {
         };
 
         if (id) { // Editando
-            const updatedSupplier = await updateSupplier(id, supplierData); // Chama a função do Supabase
-            if (updatedSupplier) {
+            const supplierIndex = suppliers.findIndex(s => s.id === id);
+            if (supplierIndex > -1) {
+                suppliers[supplierIndex] = { ...suppliers[supplierIndex], ...supplierData };
                 showNotification('Fornecedor atualizado com sucesso!', 'success');
-            } else {
-                showNotification('Erro ao atualizar fornecedor!', 'danger');
             }
         } else { // Criando
-            const newSupplier = await addSupplier(supplierData); // Chama a função do Supabase
-            if (newSupplier) {
-                showNotification('Fornecedor adicionado com sucesso!', 'success');
-            } else {
-                showNotification('Erro ao adicionar fornecedor!', 'danger');
-            }
+            const newSupplier = {
+                ...supplierData,
+                id: `sup_${Date.now()}`
+            };
+            suppliers.push(newSupplier);
+            showNotification('Fornecedor adicionado com sucesso!', 'success');
         }
 
-        await fullUpdate(); // Espera a atualização completa
-        await renderSuppliersList(); // Espera a renderização
+        saveData();
+        renderSuppliersList();
         resetSupplierForm();
     };
 
     openModal('suppliers-modal');
 }
 
-export async function renderSuppliersList() {
+function renderSuppliersList() {
     const suppliersListContainer = document.getElementById('suppliers-list');
     suppliersListContainer.innerHTML = '';
-    if (appData.suppliers.length === 0) { // Usa appData.suppliers
+    if (suppliers.length === 0) {
         suppliersListContainer.innerHTML = `<p class="text-secondary" style="text-align: center;">Nenhum fornecedor registado.</p>`;
         return;
     }
-    appData.suppliers.forEach(s => { // Usa appData.suppliers
+    suppliers.forEach(s => {
         const div = document.createElement('div');
         div.className = 'supplier-list-item';
         div.innerHTML = `
@@ -577,39 +570,15 @@ export async function renderSuppliersList() {
                 <span class="supplier-name">${s.name}</span>
                 <p class="supplier-meta">${s.email || ''}</p>
             </div>
-            <button class="btn-delete-supplier"><i data-feather="trash-2"></i></button>
+            <button onclick="deleteSupplier('${s.id}', event)" class="btn-delete-supplier"><i data-feather="trash-2"></i></button>
         `;
-
-        const deleteBtn = div.querySelector('.btn-delete-supplier');
-        deleteBtn.addEventListener('click', (event) => {
-            event.stopPropagation();
-            const supplierToDelete = appData.suppliers.find(sup => sup.id === s.id);
-            if (!supplierToDelete) return;
-
-            showConfirmModal(
-                'Excluir Fornecedor?',
-                `Tem a certeza de que deseja excluir o fornecedor "${supplierToDelete.name}"?`,
-                async () => {
-                    const success = await deleteSupplier(s.id); // Chama a função importada de database.js
-                    if (success) {
-                        showNotification('Fornecedor excluído!', 'danger');
-                        await fullUpdate();
-                        await renderSuppliersList();
-                        resetSupplierForm();
-                    } else {
-                        showNotification('Erro ao excluir fornecedor!', 'danger');
-                    }
-                }
-            );
-        });
-        
         suppliersListContainer.appendChild(div);
     });
     feather.replace();
 }
 
-export function editSupplier(id) {
-    const supplier = appData.suppliers.find(s => s.id === id); // Usa appData.suppliers
+function editSupplier(id) {
+    const supplier = suppliers.find(s => s.id === id);
     if (!supplier) return;
     
     document.getElementById('supplier-form-title').innerText = "Editar Fornecedor";
@@ -622,33 +591,51 @@ export function editSupplier(id) {
     document.getElementById('supplierSalesperson').value = supplier.salesperson;
     document.getElementById('supplierPhone').value = formatPhone(supplier.phone);
 }
+window.editSupplier = editSupplier;
 
-
-export function resetSupplierForm() {
+function resetSupplierForm() {
     document.getElementById('supplier-form').reset();
     document.getElementById('supplierId').value = '';
     document.getElementById('supplier-form-title').innerText = "Adicionar Novo Fornecedor";
 }
 
-// A função deleteSupplier agora é importada de database.js e usada diretamente.
-// A lógica de confirmação foi movida para o event listener em renderSuppliersList.
+function deleteSupplier(id, event) {
+    event.stopPropagation();
+    const supplierToDelete = suppliers.find(s => s.id === id);
+    if (!supplierToDelete) return;
 
+    showConfirmModal(
+        'Excluir Fornecedor?', 
+        `Tem a certeza de que deseja excluir o fornecedor "${supplierToDelete.name}"?`, 
+        () => {
+            const supplierIndex = suppliers.findIndex(s => s.id === id);
+            if (supplierIndex > -1) {
+                suppliers.splice(supplierIndex, 1);
+            }
+            renderSuppliersList();
+            resetSupplierForm();
+            saveData();
+            showNotification('Fornecedor excluído!', 'danger');
+        }
+    );
+}
+window.deleteSupplier = deleteSupplier;
 
-export async function openStockModal(id) {
-    const item = appData.items.find(i => i.id === id); // Usa appData.items
+function openStockModal(id) {
+    const item = items.find(i => i.id === id);
     if (!item) return;
     const form = document.getElementById('stock-form');
     form.reset();
     document.getElementById('stockItemId').value = id;
     document.getElementById('stock-modal-title').innerText = `Entrada Manual: ${item.name}`;
     
-    const packageLabel = item.package_type === 'fardo' ? 'Fardos' : 'Caixas'; // Ajustado para package_type
+    const packageLabel = item.packageType === 'fardo' ? 'Fardos' : 'Caixas';
     document.getElementById('movement-quantity-label').innerText = `Qtd. de ${packageLabel} a Adicionar`;
 
-    form.onsubmit = async (e) => { // Adicionado async aqui
+    form.onsubmit = (e) => {
         e.preventDefault();
         const itemId = document.getElementById('stockItemId').value;
-        const itemToUpdate = appData.items.find(i => i.id === itemId); // Usa appData.items
+        const itemToUpdate = items.find(i => i.id === itemId);
         if (!itemToUpdate) {
             showNotification('Erro: Item não encontrado.', 'danger');
             return;
@@ -660,40 +647,34 @@ export async function openStockModal(id) {
             return;
         }
 
-        const quantityInUnits = quantityInBoxes * (itemToUpdate.units_per_package || 1); // Ajustado para units_per_package
+        const quantityInUnits = quantityInBoxes * (itemToUpdate.unitsPerPackage || 1);
         const reason = document.getElementById('movementReason').value || 'Entrada manual';
 
         // Atualizar a quantidade do item
-        const updatedItem = await updateItem(itemId, { quantity: itemToUpdate.quantity + quantityInUnits, updated_at: new Date().toISOString() }); // Chama a função do Supabase
-        if (!updatedItem) {
-            showNotification('Erro ao atualizar quantidade do item!', 'danger');
-            return;
-        }
+        itemToUpdate.quantity += quantityInUnits;
+        itemToUpdate.updatedAt = new Date().toISOString();
 
         // Criar registo de movimento
         const movement = {
-            item_id: itemId, // Ajustado para item_id
+            id: `mov_${Date.now()}_${itemId}`,
+            itemId: itemId,
             type: 'in',
             quantity: quantityInUnits,
-            price: itemToUpdate.cost_price, // Usa o preço de custo do item para a entrada, ajustado para cost_price
+            price: itemToUpdate.costPrice, // Usa o preço de custo do item para a entrada
             reason: reason,
-            created_at: new Date().toISOString()
+            date: new Date().toISOString()
         };
-        const newMovement = await addMovement(movement); // Chama a função do Supabase
-        if (!newMovement) {
-            showNotification('Erro ao registar movimento!', 'danger');
-            return;
-        }
+        movements.push(movement);
 
-        showNotification(`Stock do item "${itemToUpdate.name}" atualizado com sucesso!`, 'success');
-        await fullUpdate(); // Espera a atualização completa
+        fullUpdate();
         closeModal('stock-modal');
+        showNotification(`Stock do item "${itemToUpdate.name}" atualizado com sucesso!`, 'success');
     };
 
     openModal('stock-modal');
 }
 
-export function showNotification(message, type = 'info') {
+function showNotification(message, type = 'info') {
     const container = document.getElementById('notification-container');
     const notif = document.createElement('div');
     notif.className = `notification ${type}`;
@@ -710,7 +691,7 @@ export function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-export function previewImage(event, previewId, placeholderId) {
+function previewImage(event, previewId, placeholderId) {
     const preview = document.getElementById(previewId);
     const placeholder = document.getElementById(placeholderId);
     if (event && event.target.files && event.target.files[0]) {
@@ -728,7 +709,7 @@ export function previewImage(event, previewId, placeholderId) {
     }
 }
 
-export function readFileAsBase64(file) {
+function readFileAsBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
@@ -737,136 +718,133 @@ export function readFileAsBase64(file) {
     });
 }
 
-export async function openUsersModal() {
-    if (currentUserProfile.role !== 'admin') { // Usa currentUserProfile
+async function openUsersModal() {
+    if (currentUser.role !== 'admin') {
         showNotification('Acesso negado.', 'danger');
         return;
     }
-    await renderUsersList(); // Espera a renderização
+    renderUsersList();
     resetUserForm();
     openModal('users-modal');
 
     const userForm = document.getElementById('user-form');
-    userForm.onsubmit = async (e) => { // Adicionado async aqui
+    userForm.onsubmit = async (e) => {
         e.preventDefault();
         const userId = document.getElementById('userId').value;
         const username = document.getElementById('formUsername').value;
-        // A senha não é mais gerenciada diretamente aqui para utilizadores existentes
-        // Novos utilizadores são criados via Supabase Auth e depois o perfil é criado aqui.
+        const password = document.getElementById('formPassword').value;
 
         const permissions = {};
         document.querySelectorAll('#permissions-container input[type="checkbox"').forEach(el => {
             permissions[el.id.replace('perm-', '')] = el.checked;
         });
 
-        if (userId) { // Editando perfil de utilizador existente
-            const updatedProfile = await updateUserProfile(userId, { username, permissions, updated_at: new Date().toISOString() }); // Chama a função do Supabase
-            if (updatedProfile) {
-                showNotification('Perfil de utilizador atualizado com sucesso!', 'success');
-            } else {
-                showNotification('Erro ao atualizar perfil de utilizador!', 'danger');
+        if (userId) { // Editing user
+            const user = users.find(u => u.id === userId);
+            if (password) {
+                user.salt = generateSalt();
+                user.password = await hashPassword(password, user.salt);
             }
-        } else { // Criando novo perfil de utilizador (assumindo que o utilizador já foi criado via Supabase Auth)
-            // Esta lógica precisará ser revista. Idealmente, a criação de utilizador e perfil
-            // seria feita num único fluxo, talvez com uma função de "signup" no auth.js
-            // Por enquanto, vamos apenas notificar que o perfil precisa de um utilizador Supabase Auth existente.
-            showNotification('Para criar um novo utilizador, primeiro crie-o no Supabase Auth e depois edite o perfil aqui.', 'info');
+            user.permissions = permissions;
+            showNotification('Usuário atualizado com sucesso!', 'success');
+        } else { // Adding new user
+            if (!password) {
+                showNotification('A senha é obrigatória para novos usuários.', 'danger');
+                return;
+            }
+            const salt = generateSalt();
+            const hashedPassword = await hashPassword(password, salt);
+            const newUser = {
+                id: `user_${Date.now()}`,
+                username,
+                password: hashedPassword,
+                salt,
+                role: 'user', // Default role
+                permissions
+            };
+            users.push(newUser);
+            showNotification('Usuário adicionado com sucesso!', 'success');
         }
-        await fullUpdate(); // Espera a atualização completa
-        await renderUsersList(); // Espera a renderização
+        saveUsers();
+        renderUsersList();
         resetUserForm();
     };
 }
 
-export async function renderUsersList() {
+function renderUsersList() {
     const usersListContainer = document.getElementById('users-list');
     usersListContainer.innerHTML = '';
-    const userProfiles = await getUserProfiles(); // Busca perfis do Supabase
-    if (userProfiles.length === 0) {
-        usersListContainer.innerHTML = `<p class="text-secondary" style="text-align: center;">Nenhum utilizador registado.</p>`;
-        return;
-    }
-    userProfiles.forEach(profile => {
+    users.forEach(user => {
         const div = document.createElement('div');
         div.className = 'user-list-item';
         div.innerHTML = `
-            <div onclick="editUser('${profile.id}')" class="user-info">
-                <span class="user-name">${profile.username}</span>
-                <p class="user-meta">${profile.role}</p>
+            <div onclick="editUser('${user.id}')" class="user-info">
+                <span class="user-name">${user.username}</span>
+                <p class="user-meta">${user.role}</p>
             </div>
-            ${currentUserProfile.id !== profile.id ? `<button onclick="deleteUser('${profile.id}', event)" class="btn-delete-user"><i data-feather="trash-2"></i></button>` : ''}
+            ${currentUser.username !== user.username ? `<button onclick="deleteUser('${user.id}', event)" class="btn-delete-user"><i data-feather="trash-2"></i></button>` : ''}
         `;
         usersListContainer.appendChild(div);
     });
     feather.replace();
 }
 
-export function editUser(userId) {
-    const user = appData.userProfiles.find(u => u.id === userId); // Usa appData.userProfiles
+function editUser(userId) {
+    const user = users.find(u => u.id === userId);
     if (!user) return;
 
-    document.getElementById('user-form-title').innerText = "Editar Utilizador";
+    document.getElementById('user-form-title').innerText = "Editar Usuário";
     document.getElementById('userId').value = user.id;
     document.getElementById('formUsername').value = user.username;
-    document.getElementById('formUsername').disabled = true; // Username não pode ser alterado aqui
+    document.getElementById('formUsername').disabled = true;
     document.getElementById('formPassword').value = '';
-    document.getElementById('formPassword').placeholder = "Não é possível alterar a senha aqui.";
-    document.getElementById('formPassword').disabled = true; // Senha não pode ser alterada aqui
+    document.getElementById('formPassword').placeholder = "Deixe em branco para não alterar";
 
     document.querySelectorAll('#permissions-container input[type="checkbox"').forEach(el => {
         const permKey = el.id.replace('perm-', '');
-        el.checked = user.permissions && user.permissions[permKey] || false;
+        el.checked = user.permissions[permKey] || false;
     });
 }
+window.editUser = editUser;
 
-
-export function resetUserForm() {
+function resetUserForm() {
     document.getElementById('user-form').reset();
     document.getElementById('userId').value = '';
     document.getElementById('formUsername').disabled = false;
-    document.getElementById('user-form-title').innerText = "Adicionar Novo Utilizador";
-    document.getElementById('formPassword').placeholder = "Não é possível adicionar utilizadores aqui.";
-    document.getElementById('formPassword').disabled = true; // Não adicionamos utilizadores por aqui
+    document.getElementById('user-form-title').innerText = "Adicionar Novo Usuário";
+    document.getElementById('formPassword').placeholder = "Palavra-passe";
 }
 
-export async function deleteUser(userId, event) { // Adicionado async aqui
+function deleteUser(userId, event) {
     event.stopPropagation();
-    if (currentUserProfile.role !== 'admin') return; // Usa currentUserProfile
+    if (currentUser.role !== 'admin') return;
 
-    const userToDelete = appData.userProfiles.find(u => u.id === userId); // Usa appData.userProfiles
+    const userToDelete = users.find(u => u.id === userId);
     if (!userToDelete) return;
 
     showConfirmModal(
-        'Excluir Utilizador?',
-        `Tem a certeza de que deseja excluir o utilizador "${userToDelete.username}"?`,
-        async () => { // Adicionado async aqui
-            // Para excluir um utilizador, precisamos excluir o perfil e depois o utilizador do Supabase Auth
-            const { error: profileError } = await supabase.from('user_profiles').delete().eq('id', userId);
-            if (profileError) {
-                console.error('Erro ao excluir perfil:', profileError.message);
-                showNotification('Erro ao excluir perfil do utilizador!', 'danger');
-                return;
+        'Excluir Usuário?',
+        `Tem a certeza de que deseja excluir o usuário "${userToDelete.username}"?`,
+        () => {
+            const userIndex = users.findIndex(u => u.id === userId);
+            if (userIndex > -1) {
+                users.splice(userIndex, 1);
             }
-
-            // ATENÇÃO: Excluir utilizadores diretamente via cliente Supabase JS não é recomendado por segurança.
-            // Isso deve ser feito via um backend seguro (Serverless Function) ou manualmente no painel do Supabase.
-            // Por enquanto, vamos apenas excluir o perfil.
-            showNotification('Perfil de utilizador excluído com sucesso! (Exclua o utilizador do Supabase Auth manualmente)', 'success');
-            
-            await fullUpdate(); // Espera a atualização completa
-            await renderUsersList(); // Espera a renderização
+            saveUsers();
+            renderUsersList();
             resetUserForm();
+            showNotification('Usuário excluído!', 'danger');
         }
     );
 }
+window.deleteUser = deleteUser;
 
-
-export async function renderOperationsHistory() {
+function renderOperationsHistory() {
     const container = document.getElementById('operations-history-list');
     if (!container) return;
 
     container.innerHTML = '';
-    if (appData.operationsHistory.length === 0) { // Usa appData.operationsHistory
+    if (operationsHistory.length === 0) {
         container.innerHTML = `<div class="text-center py-8 bg-white rounded-lg border border-gray-200">
             <i class="fas fa-history text-4xl text-gray-300 mb-3"></i>
             <p class="text-secondary">Nenhuma operação realizada ainda.</p>
@@ -874,9 +852,9 @@ export async function renderOperationsHistory() {
         return;
     }
 
-    appData.operationsHistory.slice().reverse().forEach(op => { // Usa appData.operationsHistory
+    operationsHistory.slice().reverse().forEach(op => {
         const opDate = new Date(op.date);
-        const displayId = op.operation_id || op.id; // Ajustado para operation_id
+        const displayId = op.invoiceNumber || op.id;
         const card = document.createElement('div');
         card.className = 'bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center';
         
@@ -884,7 +862,7 @@ export async function renderOperationsHistory() {
             <div class="flex-grow mb-4 sm:mb-0">
                 <p class="font-bold text-primary-DEFAULT">OP: ${displayId}</p>
                 <p class="text-sm text-secondary">Data: ${opDate.toLocaleDateString('pt-BR')} às ${opDate.toLocaleTimeString('pt-BR')}</p>
-                <p class="text-sm text-secondary">Total de Itens: ${op.items ? op.items.length : 0}</p>
+                <p class="text-sm text-secondary">Total de Itens: ${op.items.length}</p>
             </div>
             <div class="flex space-x-2 flex-shrink-0">
                 <button data-op-id="${op.id}" class="btn-icon-secondary view-invoice-btn" title="Ver Invoice"><i class="fas fa-file-invoice-dollar"></i></button>
@@ -900,11 +878,10 @@ export async function renderOperationsHistory() {
     document.querySelectorAll('#operations-history-list .view-invoice-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const opId = e.currentTarget.dataset.opId;
-            const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+            const operation = operationsHistory.find(op => op.id === opId);
             if (operation) {
-                // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
-                // window.open('gerenciador_invoice.html?origin=history', '_self');
-                showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+                sessionStorage.setItem('invoiceData', JSON.stringify({ operation, allSuppliers: suppliers, allItems: items }));
+                window.open('gerenciador_invoice.html', '_blank');
             }
         });
     });
@@ -912,11 +889,10 @@ export async function renderOperationsHistory() {
     document.querySelectorAll('#operations-history-list .view-packlist-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const opId = e.currentTarget.dataset.opId;
-            const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+            const operation = operationsHistory.find(op => op.id === opId);
             if (operation) {
-                // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
-                // window.open('gerador_packing_list.html', '_self');
-                showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+                sessionStorage.setItem('packlistData', JSON.stringify({ operation, allSuppliers: suppliers, allItems: items }));
+                window.open('gerador_packing_list.html', '_blank');
             }
         });
     });
@@ -924,16 +900,22 @@ export async function renderOperationsHistory() {
     document.querySelectorAll('#operations-history-list .delete-op-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const opId = e.currentTarget.dataset.opId;
-            deleteOperation(opId);
+            showConfirmModal('Excluir Operação?', `Tem a certeza que deseja excluir a operação ${opId}?`, () => {
+                const opIndex = operationsHistory.findIndex(op => op.id === opId);
+                if (opIndex > -1) {
+                    operationsHistory.splice(opIndex, 1);
+                }
+                saveData();
+                renderOperationsHistory(); // Apenas re-renderiza este componente
+                showNotification('Operação excluída com sucesso!', 'danger');
+            });
         });
     });
-
-    feather.replace();
 }
 
 
 
-export function showView(viewName) {
+function showView(viewName) {
     // Esconde todas as telas principais
     document.querySelectorAll('.main-view').forEach(view => {
         view.classList.add('hidden');
@@ -973,12 +955,12 @@ export function showView(viewName) {
     }
 }
 
-export async function renderOperationsHistoryModal() {
+function renderOperationsHistoryModal() {
     const container = document.getElementById('operations-history-list-container');
     if (!container) return;
 
     container.innerHTML = '';
-    if (appData.operationsHistory.length === 0) { // Usa appData.operationsHistory
+    if (operationsHistory.length === 0) {
         container.innerHTML = `<div style="text-align: center; padding: 2rem;">
             <i data-feather="clock" style="width: 48px; height: 48px; margin: 0 auto 1rem; color: var(--text-secondary);"></i>
             <p class="text-secondary">Nenhuma operação realizada ainda.</p>
@@ -987,14 +969,14 @@ export async function renderOperationsHistoryModal() {
     } else {
         const list = document.createElement('div');
         list.className = 'history-list';
-        appData.operationsHistory.slice().reverse().forEach(op => { // Usa appData.operationsHistory
+        operationsHistory.slice().reverse().forEach(op => {
             const opDate = new Date(op.date);
             const typeBadge = op.type === 'import' 
                 ? '<span class="badge import">Importada</span>' 
                 : '<span class="badge manual">Manual</span>';
 
-            // Use operation_id as the primary display, with id as a safeguard.
-            const displayId = op.operation_id || op.id;
+            // Use invoiceNumber as the primary display, with id as a safeguard.
+            const displayId = op.invoiceNumber || op.id;
 
             const card = document.createElement('div');
             card.className = 'history-card';
@@ -1006,7 +988,7 @@ export async function renderOperationsHistoryModal() {
                         ${typeBadge}
                     </div>
                     <p class="history-meta">Data: ${opDate.toLocaleDateString('pt-BR')} às ${opDate.toLocaleTimeString('pt-BR')}</p>
-                    <p class="history-meta">Total de Itens: ${op.items ? op.items.length : 0}</p>
+                    <p class="history-meta">Total de Itens: ${op.nfeData ? op.nfeData.reduce((acc, nfe) => acc + nfe.produtos.length, 0) : op.items.length}</p>
                 </div>
                 <div class="history-card-actions">
                     <button data-op-id="${op.id}" class="btn btn-secondary view-invoice-btn" title="Ver Invoice"><i data-feather="file-text"></i></button>
@@ -1022,11 +1004,10 @@ export async function renderOperationsHistoryModal() {
         container.querySelectorAll('.view-invoice-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const opId = e.currentTarget.dataset.opId;
-                const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+                const operation = operationsHistory.find(op => op.id === opId);
                 if (operation) {
-                    // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
-                    // window.open('gerenciador_invoice.html?origin=history', '_self');
-                    showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+                    localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: suppliers, allItems: items }));
+                    window.open('gerenciador_invoice.html?origin=history', '_self');
                 }
             });
         });
@@ -1034,11 +1015,10 @@ export async function renderOperationsHistoryModal() {
         container.querySelectorAll('.view-packlist-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const opId = e.currentTarget.dataset.opId;
-                const operation = appData.operationsHistory.find(op => op.id === opId); // Usa appData.operationsHistory
+                const operation = operationsHistory.find(op => op.id === opId);
                 if (operation) {
-                    // localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: appData.suppliers, allItems: appData.items })); // Adaptação para appData
-                    // window.open('gerador_packing_list.html', '_self');
-                    showNotification('Funcionalidade de Invoice/Packing List precisa ser adaptada para Supabase.', 'info');
+                    localStorage.setItem('currentDocument', JSON.stringify({ operation, allSuppliers: suppliers, allItems: items }));
+                    window.open('gerador_packing_list.html', '_self');
                 }
             });
         });
@@ -1054,44 +1034,60 @@ export async function renderOperationsHistoryModal() {
     }
 }
 
-export function openOperationsHistoryModal() {
+function openOperationsHistoryModal() {
     renderOperationsHistoryModal();
     openModal('operations-history-modal');
 }
 
-export async function deleteOperation(operationId) { // Adicionado async aqui
+function deleteOperation(operationId) {
     showConfirmModal(
         'Excluir Operação?',
         `Tem a certeza que deseja excluir a operação ${operationId}? Esta ação não pode ser desfeita.`,
-        async () => { // Adicionado async aqui
-            const operationToDelete = appData.operationsHistory.find(op => op.id === operationId); // Usa appData.operationsHistory
-            if (!operationToDelete) {
+        () => {
+            const opIndex = operationsHistory.findIndex(op => op.id === operationId);
+            if (opIndex === -1) {
                 showNotification("Erro: Operação não encontrada para excluir.", "danger");
                 return;
             }
 
-            // 1. Reverter o stock dos itens (precisa ser adaptado para Supabase)
-            // Isso é complexo e envolve buscar e atualizar itens no BD.
-            // Por enquanto, vamos apenas excluir a operação.
-            showNotification('Reversão de stock não implementada para Supabase ainda.', 'warning');
+            const operationToDelete = operationsHistory[opIndex];
 
-            // 2. Remover os movimentos associados (precisa ser adaptado para Supabase)
-            // await supabase.from('movements').delete().eq('operation_id', operationId);
+            // 1. Reverter o stock dos itens
+            operationToDelete.items.forEach(opItem => {
+                const itemIndex = items.findIndex(i => i.id === opItem.id);
+                if (itemIndex > -1) {
+                    // Garante que a quantidade é um número antes de somar
+                    items[itemIndex].quantity += Number(opItem.operationQuantity || 0);
+                }
+            });
 
-            // 3. Remover a operação do histórico
-            const { error } = await supabase.from('operations_history').delete().eq('id', operationId); // Chama a função do Supabase
-            if (error) {
-                console.error('Erro ao excluir operação:', error.message);
-                showNotification('Erro ao excluir operação!', 'danger');
-                return;
+            // 2. Remover os movimentos associados
+            const movementsToRemove = movements
+                .map((mov, index) => (mov.operationId === operationId ? index : -1))
+                .filter(index => index !== -1);
+
+            for (let i = movementsToRemove.length - 1; i >= 0; i--) {
+                movements.splice(movementsToRemove[i], 1);
             }
 
+            // 3. Remover a operação do histórico
+            operationsHistory.splice(opIndex, 1);
+
+            // 4. Salvar dados e atualizar a UI
+            fullUpdate();
             showNotification(`Operação ${operationId} excluída com sucesso!`, 'danger');
-            await fullUpdate(); // Espera a atualização completa
-            await renderOperationsHistoryModal(); // Re-renderiza o modal de histórico
+            
+            // 5. Re-renderizar o modal de histórico
+            renderOperationsHistoryModal();
         }
     );
 }
 window.deleteOperation = deleteOperation;
 
-// O bloco de exportação nomeado foi removido pois todas as funções já são exportadas individualmente.
+export { 
+    applyPermissionsToUI, fullUpdate, openModal, closeModal, 
+    showConfirmModal, openItemModal, openSuppliersModal, openStockModal, 
+    showNotification, openUsersModal, openItemDetailsModal, renderItems,
+    previewImage, resetSupplierForm, resetUserForm, renderOperationsHistory,
+    showView, formatCurrency, getStatus, renderOperationsHistoryModal, openOperationsHistoryModal
+};
