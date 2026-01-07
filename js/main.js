@@ -1,30 +1,57 @@
-import { initializeAuth, handleLogout, checkPermission } from './auth.js';
-import { loadDataAndRenderApp, saveData, items, operationsHistory, suppliers } from './database.js';
+import { supabaseClient, handleLogin, handleLogout, checkPermission, fetchUserProfile, setCurrentUserProfile, getCurrentUserProfile } from './auth.js';
+import {
+    loadDataAndRenderApp, items, operationsHistory, suppliers, addOperation
+} from './database.js';
 import { openReportsModal } from './reports.js';
 import { finalizarOperacaoDeImportacao, regenerateDocument } from './operations.js';
-import { 
+import {
     applyPermissionsToUI, fullUpdate, showView, showNotification, openModal, closeModal, openOperationsHistoryModal
 } from './ui.js';
 import { initializeEventListeners } from './events.js';
 import { openSimulationModal, resumeSimulation } from './simulation.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
+import { escapeHTML } from './utils/helpers.js';
+import { API_CONFIG } from './config.js'; // Import config
 
 // --- Variáveis de Estado para o Novo Fluxo de Extração ---
 let stagedNfeData = []; // Array para guardar dados de múltiplas NF-e
 let stagedItems = []; // Array para guardar os itens acumulados
 
-document.addEventListener('DOMContentLoaded', () => {
 
-    loadDataAndRenderApp();
+/**
+ * Função principal de inicialização da aplicação quando o usuário está logado.
+ * @param {object} userProfile - O perfil completo do usuário (auth + profile).
+ */
+async function initializeApp(user) { // Receives user, not userProfile
+    console.log("Attempting to initialize app for user:", user);
 
-    if (initializeAuth()) {
+    console.log("Fetching full user profile...");
+    const userProfile = await fetchUserProfile(user);
+    console.log("Full user profile fetched:", userProfile);
 
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('app-container').classList.remove('hidden');
-        applyPermissionsToUI();
+    if (!userProfile) {
+        console.error("Could not get user profile. Aborting app initialization and logging out.");
+        showNotification('Sessão inválida ou perfil não encontrado. Por favor, faça login novamente.', 'danger');
+        await handleLogout();
+        return; // Stop initialization
+    }
+
+    console.log("Usuário autenticado com perfil. Inicializando a aplicação...", userProfile);
+    setCurrentUserProfile(userProfile); // Set the profile now
+
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app-container').classList.remove('hidden');
+
+    // 1. Aplica as permissões primeiro para evitar race conditions
+    applyPermissionsToUI(userProfile);
+
+    try {
+        // 2. Carrega os dados e renderiza o resto da aplicação
+        await loadDataAndRenderApp();
+
         fullUpdate();
 
-        // Handle hash-based navigation and session-based state restoration
+        // Lógica de navegação e restauração de estado
         const hash = window.location.hash;
         const simReturnData = sessionStorage.getItem('simulationReturnData');
 
@@ -41,14 +68,70 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             showView('dashboard');
         }
-
-    } else {
-        document.getElementById('login-screen').classList.remove('hidden');
-        document.getElementById('app-container').classList.add('hidden');
+    } catch (error) {
+        console.error("Falha ao inicializar a aplicação:", error);
+        showNotification(`Erro crítico ao carregar dados: ${error.message}. Por favor, recarregue a página.`, 'danger', 10000);
+        // Se o carregamento de dados falhar, não devemos mostrar a app, mas sim a tela de erro/login.
+        await handleLogout();
     }
-    
+}
+
+/**
+ * Limpa a UI e os dados quando o usuário faz logout.
+ */
+function shutdownApp() {
+    console.log("Usuário deslogado. Desligando a aplicação.");
+    setCurrentUserProfile(null); // Limpa o perfil do usuário
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('app-container').classList.add('hidden');
+    // Limpar quaisquer dados sensíveis em memória, se necessário
+    items.length = 0;
+    operationsHistory.length = 0;
+    suppliers.length = 0;
+}
+
+
+// --- Ponto de Entrada da Aplicação ---
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Listener principal de autenticação do Supabase
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        // This is the robust logging version, which is fine to keep.
+        console.log('--- Auth State Change ---');
+        console.log('Event:', event);
+        console.log('Session exists:', !!session);
+
+        if (session) {
+            // Session exists, proceed to initialize the app immediately.
+            // We will fetch the detailed profile inside initializeApp.
+            console.log('Session found. Calling initializeApp...');
+            initializeApp(session.user);
+        } else {
+            console.log('No session found. Shutting down app.');
+            shutdownApp();
+        }
+        console.log('--- End Auth State Change ---');
+    });
+
+    // Listener para o formulário de login
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const button = e.target.querySelector('button');
+
+        button.disabled = true;
+        button.textContent = 'A entrar...';
+
+        await handleLogin(email, password);
+
+        button.disabled = false;
+        button.textContent = 'Entrar';
+    });
+
+    // Inicializa todos os outros event listeners da aplicação
     initializeEventListeners();
-    
+
     // Listener de Navegação Principal (Bottom Nav - Mobile)
     document.querySelector('.bottom-nav').addEventListener('click', (e) => {
         const navItem = e.target.closest('.nav-item');
@@ -56,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         e.preventDefault();
         const viewName = navItem.id.split('-')[1]; // e.g., 'dashboard', 'operations'
-        
+
         if (viewName === 'reports') {
             openReportsModal();
         } else if (viewName === 'operations') {
@@ -66,30 +149,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
-
     // Adiciona o listener para o upload de XML, que estava ausente
     document.getElementById('xml-upload-main').addEventListener('change', handleXmlUpload);
 
+    // O listener de 'storage' pode ser removido ou adaptado, pois não usaremos mais localStorage para o documento
     window.addEventListener('storage', (event) => {
-        if (event.key === 'currentDocument') {
-            const documentDataString = event.newValue;
-            if (documentDataString) {
-                const documentData = JSON.parse(documentDataString);
-                const operationId = documentData.operation.id;
-                const opIndex = operationsHistory.findIndex(op => op.id === operationId);
-                if (opIndex > -1) {
-                    const originalDate = operationsHistory[opIndex].date;
-                    operationsHistory[opIndex] = documentData.operation;
-                    operationsHistory[opIndex].date = originalDate; // Keep original date
-                    saveData();
-                    showNotification(`Operação ${operationId} atualizada.`, 'info');
-                }
-            }
-        }
+        // Esta lógica precisa ser repensada com o Supabase (talvez usando Realtime)
     });
 });
 
+// O resto do arquivo (handleXmlUpload, showExtractionMenu, etc.) permanece o mesmo por enquanto.
 // --- Nova Lógica de Extração de XML (Frontend envia para Backend) --- //
 
 async function handleXmlUpload(event) {
@@ -108,12 +177,10 @@ async function handleXmlUpload(event) {
 
     try {
         // Substitua pela URL do seu backend se for diferente
-        const response = await fetch('http://localhost:8001/upload/', {
+        const response = await fetch(API_CONFIG.XML_UPLOAD_URL, {
             method: 'POST',
             headers: {
-                // A chave de API precisa ser gerenciada de forma segura
-                // Por agora, vamos assumir que ela está disponível ou não é estritamente necessária para o desenvolvimento local
-                'Authorization': 'secret' // ATENÇÃO: Usar uma chave fixa no código não é seguro para produção
+                [API_CONFIG.API_KEY_HEADER]: API_CONFIG.API_KEY_VALUE
             },
             body: formData
         });
@@ -204,32 +271,52 @@ function clearStagedData() {
     stagedItems = [];
 }
 
-function handlePerformOperation() {
+async function handlePerformOperation() {
     if (stagedItems.length === 0) {
         showNotification('Nenhum item carregado para realizar a operação.', 'warning');
         return;
     }
 
+    const currentUser = getCurrentUserProfile();
+    if (!currentUser) {
+        showNotification('Usuário não autenticado. Não é possível salvar a operação.', 'danger');
+        return;
+    }
+
+    const loadingOverlay = document.getElementById('loading-overlay');
+    loadingOverlay.classList.remove('hidden');
+
     const operationId = `OP-${Date.now()}`;
     const newOperation = {
         id: operationId,
-        invoiceNumber: operationId.replace('OP-', ''), // Initialize invoiceNumber
+        user_id: currentUser.id,
+        invoiceNumber: operationId.replace('OP-', ''),
         date: new Date().toISOString(),
         items: [...stagedItems],
         nfeData: [...stagedNfeData],
         type: 'import'
     };
 
-    operationsHistory.push(newOperation);
+    try {
+        // Salva a operação principal primeiro
+        await addOperation(newOperation);
+        operationsHistory.push(newOperation);
 
-    // Processa a entrada e saída dos itens no estoque e cria os movimentos
-    finalizarOperacaoDeImportacao(stagedNfeData, newOperation.id);
+        // Em seguida, salva todos os itens, fornecedores e movimentos, esperando a conclusão
+        await finalizarOperacaoDeImportacao(stagedNfeData, newOperation.id);
 
-    saveData();
-    clearStagedData();
-    closeModal('extraction-menu-modal');
-    showNotification(`Operação ${newOperation.id} criada com sucesso!`, 'success');
+        clearStagedData();
+        closeModal('extraction-menu-modal');
+        showNotification(`Operação ${newOperation.id} criada e salva com sucesso!`, 'success');
 
-    // Abre o histórico de operações para o usuário ver o resultado
-    regenerateDocument(newOperation.id, 'invoice');
+        // Por fim, gera o documento
+        regenerateDocument(newOperation.id, 'invoice');
+
+    } catch (error) {
+        showNotification(`Erro ao salvar operação no banco de dados: ${error.message}`, 'danger');
+        console.error("Falha ao salvar operação:", error);
+    } finally {
+        // Garante que o overlay de carregamento seja sempre escondido
+        loadingOverlay.classList.add('hidden');
+    }
 }

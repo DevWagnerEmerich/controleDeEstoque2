@@ -3,9 +3,8 @@ import { openOperationModal, saveManualOperation } from './operations.js';
 import { openSimulationModal, previewSimulationAsInvoice, saveSimulationAsDraft, createPurchaseOrder, openSimAddItemModal } from './simulation.js';
 import { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport } from './reports.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
-import { handleLogout } from './auth.js';
+import { handleLogout, sendPasswordReset } from './auth.js';
 import { renderItems } from './ui.js';
-import { clearAllData } from './database.js';
 
 export function initializeEventListeners() {
     const addClickListener = (id, handler) => {
@@ -21,7 +20,7 @@ export function initializeEventListeners() {
             element.addEventListener('change', handler);
         }
     };
-    
+
     const addKeyupListener = (id, handler) => {
         const element = document.getElementById(id);
         if (element) {
@@ -71,7 +70,7 @@ export function initializeEventListeners() {
     }
 
     const closeDropdown = () => {
-        if(operationsDropdown) {
+        if (operationsDropdown) {
             operationsDropdown.classList.add('hidden');
             desktopOperationsBtn.classList.remove('open');
         }
@@ -143,7 +142,7 @@ export function initializeEventListeners() {
     });
     addClickListener('reset-user-form-btn', resetUserForm);
     addChangeListener('itemImageInput', (e) => previewImage(e, 'imagePreview', 'imagePlaceholder'));
-    
+
     // --- Reports Modal ---
     addClickListener('reports-tab-nav', (e) => {
         if (e.target.matches('.report-tab')) {
@@ -162,7 +161,7 @@ export function initializeEventListeners() {
 
         const passwordInput = document.getElementById('password');
         const icon = document.querySelector('.password-toggle-icon');
-        
+
         if (passwordInput.type === 'password') {
             passwordInput.type = 'text';
             icon.setAttribute('data-feather', 'eye');
@@ -173,13 +172,6 @@ export function initializeEventListeners() {
         feather.replace();
     });
 
-    addClickListener('menu-clear-data', () => {
-        showConfirmModal(
-            'Limpar todos os dados?',
-            'Esta ação é irreversível e irá apagar todos os itens, fornecedores e operações. Os dados de utilizador não serão afetados.',
-            clearAllData
-        );
-    });
 
     feather.replace();
 }

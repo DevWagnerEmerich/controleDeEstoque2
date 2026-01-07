@@ -9,6 +9,10 @@
     <link rel="stylesheet" href="css/modal_styles.css?v=1.1">
     <link rel="stylesheet" href="css/generator.css?v=1.1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    
+    <!-- Supabase e Scripts de Sessão -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="module" src="js/supabase.js"></script>
 </head>
 <body>
 
@@ -21,8 +25,8 @@
                 </button>
                 <div class="action-buttons-group">
                     <button id="save-changes-btn" class="btn btn-icon btn-icon-primary" title="Salvar Alterações"><i class="fas fa-save"></i></button>
-                    <button class="btn btn-icon btn-icon-secondary" onclick="saveChanges(); window.location.href = 'gerador_packing_list.html'" title="Ver Packing List"><i class="fas fa-box-open"></i></button>
-                    <button class="btn btn-icon btn-icon-success" onclick="printInvoice()" title="Imprimir / Salvar PDF"><i class="fas fa-print"></i></button>
+                    <button id="packing-list-btn" class="btn btn-icon btn-icon-secondary" title="Ver Packing List"><i class="fas fa-box-open"></i></button>
+                    <button id="print-invoice-btn" class="btn btn-icon btn-icon-success" title="Imprimir / Salvar PDF"><i class="fas fa-print"></i></button>
                 </div>
             </div>
             
@@ -99,7 +103,7 @@
 
     <div id="notification-container"></div>
 
-    <script src="js/invoice.js"></script>
+    <script type="module" src="js/invoice.js"></script>
     <script src="js/simulation_invoice_preview.js"></script>
 
 </body>

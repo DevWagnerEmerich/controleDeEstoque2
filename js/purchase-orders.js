@@ -1,5 +1,5 @@
 import { openModal, showNotification } from './ui.js';
-import { pendingPurchaseOrders, saveData, suppliers, loadPendingPurchaseOrders } from './database.js';
+import { pendingPurchaseOrders, suppliers, updatePurchaseOrder, loadDataAndRenderApp } from './database.js';
 import { uploadAndProcessPoXml } from './import.js';
 import { stockInPurchaseOrder } from './operations.js';
 
@@ -61,7 +61,7 @@ window.attachXml = (orderId) => {
         return;
     }
     for (const item of order.items) {
-        if (!item.code || !item.supplierId) {
+        if (!item.code || !item.supplier_id) {
             const errorMessage = `Erro de Integridade de Dados na OC ${orderId}: O item "${item.name}" (ID: ${item.id}) está sem 'código' ou 'ID do fornecedor'. Os dados podem ter sido perdidos durante a criação ou edição da OC.`;
             showNotification(errorMessage, "danger", 10000);
             console.error(errorMessage, "Item data:", item);
@@ -75,32 +75,39 @@ window.attachXml = (orderId) => {
     fileInput.click();
 };
 
-window.finalizeAttachments = (orderId) => {
+window.finalizeAttachments = async (orderId) => {
     const orderIndex = pendingPurchaseOrders.findIndex(op => op.id === orderId);
     if (orderIndex === -1) {
         showNotification("Ordem de compra não encontrada.", "danger");
         return;
     }
 
-    if (!pendingPurchaseOrders[orderIndex].xmlAttached) {
-        showNotification("Anexe pelo menos um arquivo XML antes de finalizar.", "warning");
+    // Validação para garantir que um XML foi anexado e processado.
+    if (!pendingPurchaseOrders[orderIndex].xml_attached) {
+        showNotification("É necessário anexar e processar um arquivo XML antes de finalizar.", "warning");
         return;
     }
 
-    pendingPurchaseOrders[orderIndex].status = 'pending_stock_entry';
-    saveData();
-    renderPurchaseOrders();
-    showNotification("Ordem de Compra finalizada. Pronta para entrada no estoque.", "success");
+    const updatedStatus = 'pending_stock_entry';
+    try {
+        await updatePurchaseOrder(orderId, { status: updatedStatus });
+        pendingPurchaseOrders[orderIndex].status = updatedStatus;
+        renderPurchaseOrders();
+        showNotification("Ordem de Compra finalizada. Pronta para entrada no estoque.", "success");
+    } catch (error) {
+        showNotification(`Erro ao atualizar status da Ordem de Compra: ${error.message}`, "danger");
+        console.error("Erro ao finalizar anexos:", error);
+    }
 };
 
 window.stockIn = (orderId) => {
     stockInPurchaseOrder(orderId);
 };
 
-function handlePoXmlUpload(event) {
+async function handlePoXmlUpload(event) {
     const files = event.target.files;
     const orderId = event.target.getAttribute('data-order-id');
-    const fileInput = event.target; // Keep a reference to the input element
+    const fileInput = event.target;
 
     if (!files.length || !orderId) {
         return;
@@ -112,37 +119,31 @@ function handlePoXmlUpload(event) {
         return;
     }
 
-    const numFiles = files.length; // Store the number of files
-
     const uploadPromises = Array.from(files).map(file => {
         return new Promise((resolve, reject) => {
             uploadAndProcessPoXml(file, orderId, resolve, reject);
         });
     });
 
-    Promise.all(uploadPromises).then(() => {
-        // Force a reload of the pending POs from localStorage to ensure consistency
-        loadPendingPurchaseOrders();
-        renderPurchaseOrders();
-        // The notification is now shown for each individual file processed.
-    }).catch(error => {
+    try {
+        await Promise.all(uploadPromises);
+        // Força a recarga de todos os dados do banco de dados para atualizar a UI
+        await loadDataAndRenderApp();
+        showNotification("Dados da Ordem de Compra atualizados com sucesso!", "success");
+    } catch (error) {
         console.error("Ocorreu um erro durante o processamento dos XMLs:", error);
         showNotification("Ocorreu um erro durante o processamento de um ou mais XMLs.", "danger");
-
-        // Also clean up on error
+    } finally {
+        // Limpa o input de arquivo para permitir novos uploads
         fileInput.value = null;
         fileInput.removeAttribute('data-order-id');
-    });
+    }
 }
 
 window.viewPurchaseOrder = (orderId) => {
-    // Read directly from localStorage to ensure data is fresh
-    const pendingPOsString = localStorage.getItem('stockPendingPOs_v1');
-    const localPendingPOs = pendingPOsString ? JSON.parse(pendingPOsString) : [];
-    
-    const order = localPendingPOs.find(op => op.id === orderId);
+    const order = pendingPurchaseOrders.find(op => op.id === orderId);
     if (!order) {
-        showNotification("Ordem de compra não encontrada no armazenamento local.", "danger");
+        showNotification("Ordem de compra não encontrada.", "danger");
         return;
     }
 

@@ -1,6 +1,7 @@
-import { items, suppliers, movements, saveData, importedOperationsHistory, cumulativeImportedItems, operationsHistory, pendingPurchaseOrders } from './database.js';
+import { items, suppliers, movements, importedOperationsHistory, cumulativeImportedItems, operationsHistory, pendingPurchaseOrders, updatePurchaseOrder } from './database.js';
 import { showNotification, openModal, closeModal, showConfirmModal } from './ui.js';
 import { openOperationModal } from './operations.js';
+import { escapeHTML } from './utils/helpers.js';
 import { checkPermission } from './auth.js';
 
 let itemsToImport = [];
@@ -10,7 +11,7 @@ async function uploadAndProcessPoXml(file, orderId, onComplete, onError) {
     formData.append('file', file);
 
     try {
-        const response = await fetch('http://localhost:8001/upload/', {
+        const response = await fetch('/api/upload/', {
             method: 'POST',
             headers: {
                 'Authorization': 'secret'
@@ -24,14 +25,13 @@ async function uploadAndProcessPoXml(file, orderId, onComplete, onError) {
         }
 
         const extractedData = await response.json();
-        
+
         const orderIndex = pendingPurchaseOrders.findIndex(op => op.id === orderId);
         if (orderIndex === -1) {
             throw new Error('Ordem de compra não encontrada.');
         }
 
         const order = pendingPurchaseOrders[orderIndex];
-        order.xmlAttached = true; // Mark that an XML has been attached
 
         const xmlProducts = extractedData.produtos;
         const xmlSupplierCnpj = extractedData.fornecedor.cnpj;
@@ -47,13 +47,13 @@ async function uploadAndProcessPoXml(file, orderId, onComplete, onError) {
         xmlProducts.forEach(xmlProduct => {
             const orderItem = order.items.find(item => {
                 const codeMatch = String(item.code).trim() === String(xmlProduct.code).trim();
-                const supplierMatch = item.supplierId === supplier.id;
+                const supplierMatch = item.supplier_id === supplier.id;
                 return codeMatch && supplierMatch;
             });
 
             if (orderItem) {
                 orderItem.costPrice = xmlProduct.costPrice;
-                orderItem.operationPrice = xmlProduct.costPrice; // Assuming operationPrice should also be updated
+                orderItem.operationPrice = xmlProduct.costPrice;
                 updatedCount++;
             } else {
                 notFoundProducts.push(`${xmlProduct.name} (Cód: ${xmlProduct.code})`);
@@ -61,16 +61,17 @@ async function uploadAndProcessPoXml(file, orderId, onComplete, onError) {
         });
 
         pendingPurchaseOrders[orderIndex] = order;
-        saveData();
 
         let notificationMessage = `Preços de ${updatedCount} item(ns) atualizados na OC ${orderId} a partir do arquivo ${file.name}.`;
         if (notFoundProducts.length > 0) {
             notificationMessage += `\n\nOs seguintes produtos do XML não foram encontrados na OC:\n- ${notFoundProducts.join('\n- ')}`;
-            showNotification(notificationMessage, 'warning', 10000); // Longer duration for warning
+            showNotification(notificationMessage, 'warning', 10000);
         } else {
             showNotification(notificationMessage, 'success');
         }
 
+        // Salva a Ordem de Compra atualizada no Supabase, incluindo o flag de anexo
+        await updatePurchaseOrder(orderId, { items: order.items, xml_attached: true });
 
         if (onComplete && typeof onComplete === 'function') {
             onComplete();
@@ -148,11 +149,11 @@ function processAndPreviewSheet(data) {
     }
 
     const headers = Object.keys(itemsToImport[0]);
-    previewHeader.innerHTML = `<tr>${headers.map(h => `<th class="p-2 text-left">${h}</th>`).join('')}</tr>`;
+    previewHeader.innerHTML = `<tr>${headers.map(h => `<th class="p-2 text-left">${escapeHTML(h)}</th>`).join('')}</tr>`;
 
     itemsToImport.forEach(item => {
         const row = document.createElement('tr');
-        row.innerHTML = headers.map(h => `<td class="p-2 border-t">${item[h] || ''}</td>`).join('');
+        row.innerHTML = headers.map(h => `<td class="p-2 border-t">${escapeHTML(item[h] || '')}</td>`).join('');
         previewBody.appendChild(row);
     });
 
@@ -177,8 +178,8 @@ function processAndPreviewPdfProducts(dadosImportados) {
     const infoDiv = document.createElement('div');
     infoDiv.className = "mb-4 p-3 bg-blue-50 rounded-md text-sm";
     infoDiv.innerHTML = `
-        <p><strong>NF-e:</strong> ${dadosImportados.notaFiscal.numero}</p>
-        <p><strong>Fornecedor:</strong> ${dadosImportados.fornecedor.nome}</p>
+        <p><strong>NF-e:</strong> ${escapeHTML(dadosImportados.notaFiscal.numero)}</p>
+        <p><strong>Fornecedor:</strong> ${escapeHTML(dadosImportados.fornecedor.nome)}</p>
     `;
     previewContainer.prepend(infoDiv);
 
@@ -188,9 +189,9 @@ function processAndPreviewPdfProducts(dadosImportados) {
     itemsToImport.forEach(item => {
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td class="p-2 border-t">${item.code || ''}</td>
-            <td class="p-2 border-t">${item.name || ''}</td>
-            <td class="p-2 border-t">${item.ncm || ''}</td>
+            <td class="p-2 border-t">${escapeHTML(item.code || '')}</td>
+            <td class="p-2 border-t">${escapeHTML(item.name || '')}</td>
+            <td class="p-2 border-t">${escapeHTML(item.ncm || '')}</td>
             <td class="p-2 border-t">${item.quantity || 0}</td>
             <td class="p-2 border-t">${item.costPrice || 0}</td>
             <td class="p-2 border-t">${item.salePrice || 0}</td>

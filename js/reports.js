@@ -1,5 +1,6 @@
 import { items, movements, suppliers } from './database.js';
-import { openModal, closeModal, getStatus, formatCurrency } from './ui.js';
+import { openModal, closeModal, getStatus, formatCurrency, showNotification } from './ui.js';
+import { escapeHTML } from './utils/helpers.js';
 import { checkPermission } from './auth.js';
 
 let charts = {};
@@ -64,15 +65,15 @@ function renderOverviewReports() {
         data: { labels: Object.keys(statusData), datasets: [{ label: 'Nº de Itens', data: Object.values(statusData), backgroundColor: ['#22C55E', '#F97316', '#EF4444', '#6B7280'] }] },
         options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y' }
     });
-    
+
     renderReportsMovements();
 }
 
 function renderReportsMovements() {
     const container = document.getElementById('reports-movements-history');
     container.innerHTML = '';
-    const recentMovements = [...movements].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
-    if(recentMovements.length === 0) {
+    const recentMovements = [...movements].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
+    if (recentMovements.length === 0) {
         container.innerHTML = `<p class="text-secondary text-center py-4">Nenhuma movimentação registada.</p>`;
         return;
     }
@@ -82,9 +83,9 @@ function renderReportsMovements() {
         div.className = `report-movement-item ${mov.type}`;
         div.innerHTML = `
             <div class="movement-info">
-                <span class="movement-name">${item ? item.name : 'Item Excluído'}</span>
+                <span class="movement-name">${item ? escapeHTML(item.name) : 'Item Excluído'}</span>
                 <span class="movement-qty">(${mov.quantity} un.)</span>
-                ${mov.operationId ? `<span class="movement-op">(${mov.operationId})</span>` : ''}
+                ${mov.operationId ? `<span class="movement-op">(${escapeHTML(mov.operationId)})</span>` : ''}
             </div>
             <span class="movement-date">${new Date(mov.date).toLocaleString('pt-BR')}</span>
         `;
@@ -103,16 +104,16 @@ function renderProductAnalysisReports() {
     const filteredMovements = (periodDays === 'all')
         ? movements.filter(m => m.type === 'out')
         : movements.filter(m => m.type === 'out' && new Date(m.date) >= startDate);
-    
+
     const salesByQuantity = filteredMovements.reduce((acc, mov) => {
         acc[mov.itemId] = (acc[mov.itemId] || 0) + mov.quantity;
         return acc;
     }, {});
-    
+
     const topSelling = Object.entries(salesByQuantity)
         .sort(([, a], [, b]) => b - a)
         .slice(0, 5);
-    
+
     const leastSelling = Object.entries(salesByQuantity)
         .sort(([, a], [, b]) => a - b)
         .slice(0, 5);
@@ -148,7 +149,7 @@ function renderRankingList(containerId, data, label, formatter) {
         div.className = 'ranking-item';
         div.innerHTML = `
             <div class="ranking-header">
-                <span class="ranking-name">${item.name}</span>
+                <span class="ranking-name">${escapeHTML(item.name)}</span>
                 <span class="ranking-value">${formattedValue}</span>
             </div>
             <div class="ranking-bar-background">
@@ -199,15 +200,15 @@ function renderDailyMovementsReport() {
             <div class="movement-icon"><i data-feather="${isOut ? 'arrow-up-circle' : 'arrow-down-circle'}"></i></div>
             <div class="movement-details">
                 <div class="movement-header">
-                    <span class="movement-name">${item ? item.name : 'Item Excluído'}</span>
+                    <span class="movement-name">${item ? escapeHTML(item.name) : 'Item Excluído'}</span>
                     <span class="movement-time">${new Date(mov.date).toLocaleTimeString('pt-BR')}</span>
                 </div>
-                <p class="movement-reason">${mov.reason || 'N/A'}</p>
+                <p class="movement-reason">${escapeHTML(mov.reason || 'N/A')}</p>
                 <div class="movement-stats">
                     <div><strong>Qtd:</strong> ${sign}${mov.quantity} un.</div>
                     <div><strong>Valor:</strong> ${formatCurrency(mov.price, 'BRL')}</div>
                     <div><strong>Total:</strong> ${formatCurrency(mov.price * mov.quantity, 'BRL')}</div>
-                    <div><strong>Fornecedor:</strong> ${supplier ? supplier.name : 'N/A'}</div>
+                    <div><strong>Fornecedor:</strong> ${supplier ? escapeHTML(supplier.name) : 'N/A'}</div>
                 </div>
             </div>
         `;

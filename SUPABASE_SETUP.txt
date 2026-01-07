@@ -1,0 +1,176 @@
+# Guia de Configuração do Supabase para o Projeto ControleApp
+
+Este documento irá guiá-lo na criação e configuração do seu banco de dados no Supabase.
+
+---
+
+## Parte 1: Criação do Projeto no Supabase
+
+1.  **Acesse o Supabase:**
+    *   Vá para [https://supabase.com](https://supabase.com).
+    *   Clique em "Start your project" ou "Sign In".
+
+2.  **Faça Login:**
+    *   Recomendamos usar sua conta do GitHub para um login rápido e fácil.
+
+3.  **Crie uma Nova Organização (se necessário):**
+    *   Se for seu primeiro projeto, o Supabase pode pedir para criar uma "Organização". Você pode usar seu nome de usuário ou um nome de sua preferência (ex: "Minha Empresa").
+
+4.  **Crie um Novo Projeto:**
+    *   Dentro da sua organização, clique em "New Project".
+    *   **Nome do Projeto:** Escolha um nome descritivo (ex: `controle-app`).
+    *   **Senha do Banco de Dados:** Crie uma senha forte e **GUARDE-A EM UM LOCAL SEGURO**. Embora não a usaremos diretamente no código do frontend, ela é importante para acesso administrativo.
+    *   **Região:** Selecione a região do servidor mais próxima de você ou de seus usuários (ex: "South America (São Paulo)").
+    *   Clique em "Create new project".
+
+5.  **Aguarde a Inicialização:**
+    *   O Supabase levará alguns minutos para provisionar toda a infraestrutura do seu projeto. Aguarde até que esteja pronto.
+
+---
+
+## Parte 2: Criação das Tabelas no Supabase
+
+Após o projeto estar pronto, você será redirecionado para o painel do seu projeto.
+
+1.  **Acesse o SQL Editor:**
+    *   No menu lateral esquerdo do painel do Supabase, clique em "SQL Editor" (ícone de ">_").
+
+2.  **Crie a Tabela `suppliers`:**
+    *   Cole o seguinte código SQL no editor e clique em "RUN":
+
+    ```sql
+    CREATE TABLE public.suppliers (
+      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      name text NOT NULL,
+      cnpj text UNIQUE NOT NULL,
+      address text,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL
+    );
+
+    ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
+
+    CREATE POLICY "Enable read access for all users" ON public.suppliers
+      FOR SELECT USING (true);
+
+    CREATE POLICY "Enable insert for authenticated users only" ON public.suppliers
+      FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+    CREATE POLICY "Enable update for users based on user_id" ON public.suppliers
+      FOR UPDATE USING (auth.uid() = user_id);
+
+    CREATE POLICY "Enable delete for users based on user_id" ON public.suppliers
+      FOR DELETE USING (auth.uid() = user_id);
+    ```
+    *   **Explicação:**
+        *   `id uuid DEFAULT gen_random_uuid() PRIMARY KEY`: Cria uma chave primária única gerada automaticamente.
+        *   `created_at timestamp with time zone DEFAULT now() NOT NULL`: Registra a data de criação.
+        *   `name text NOT NULL`, `cnpj text UNIQUE NOT NULL`, `address text`: Colunas para os dados do fornecedor. `cnpj` é único.
+        *   `user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL`: **Muito importante!** Esta coluna vincula o fornecedor a um usuário autenticado. `auth.users(id)` é a tabela de usuários do Supabase. `ON DELETE CASCADE` significa que se o usuário for deletado, seus fornecedores também serão.
+        *   `ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;`: Ativa a segurança em nível de linha.
+        *   `CREATE POLICY ...`: Define as regras de acesso. Por exemplo, um usuário só pode inserir, atualizar ou deletar fornecedores se o `user_id` do fornecedor for igual ao `id` do usuário logado (`auth.uid()`). A leitura é permitida para todos os usuários autenticados.
+
+3.  **Crie a Tabela `items`:**
+    *   Cole o seguinte código SQL no editor e clique em "RUN":
+
+    ```sql
+    CREATE TABLE public.items (
+      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      name text NOT NULL,
+      code text,
+      ncm text,
+      quantity numeric DEFAULT 0 NOT NULL,
+      cost_price numeric DEFAULT 0 NOT NULL,
+      sale_price numeric DEFAULT 0 NOT NULL,
+      min_quantity numeric DEFAULT 0 NOT NULL,
+      units_per_box numeric DEFAULT 0 NOT NULL,
+      unit_weight numeric DEFAULT 0 NOT NULL,
+      description text,
+      image_url text,
+      supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL
+    );
+
+    ALTER TABLE public.items ENABLE ROW LEVEL SECURITY;
+
+    CREATE POLICY "Enable read access for users based on user_id" ON public.items
+      FOR SELECT USING (auth.uid() = user_id);
+
+    CREATE POLICY "Enable insert for users based on user_id" ON public.items
+      FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+    CREATE POLICY "Enable update for users based on user_id" ON public.items
+      FOR UPDATE USING (auth.uid() = user_id);
+
+    CREATE POLICY "Enable delete for users based on user_id" ON public.items
+      FOR DELETE USING (auth.uid() = user_id);
+    ```
+    *   **Explicação:** Similar à tabela `suppliers`, com colunas específicas para itens e uma chave estrangeira para `supplier_id`. As políticas de RLS garantem que cada usuário só gerencie seus próprios itens.
+
+4.  **Crie a Tabela `operations`:**
+    *   Cole o seguinte código SQL no editor e clique em "RUN":
+
+    ```sql
+    CREATE TABLE public.operations (
+      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      type text NOT NULL,
+      invoice_number text,
+      nfe_data jsonb,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL
+    );
+
+    ALTER TABLE public.operations ENABLE ROW LEVEL SECURITY;
+
+    CREATE POLICY "Enable read access for users based on user_id" ON public.operations
+      FOR SELECT USING (auth.uid() = user_id);
+
+    CREATE POLICY "Enable insert for users based on user_id" ON public.operations
+      FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+    CREATE POLICY "Enable update for users based on user_id" ON public.operations
+      FOR UPDATE USING (auth.uid() = user_id);
+
+    CREATE POLICY "Enable delete for users based on user_id" ON public.operations
+      FOR DELETE USING (auth.uid() = user_id);
+    ```
+    *   **Explicação:** Tabela para registrar operações, com `nfe_data` como `jsonb` para armazenar o JSON completo da NF-e.
+
+5.  **Crie a Tabela `movements`:**
+    *   Cole o seguinte código SQL no editor e clique em "RUN":
+
+    ```sql
+    CREATE TABLE public.movements (
+      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      item_id uuid REFERENCES public.items(id) ON DELETE CASCADE NOT NULL,
+      operation_id uuid REFERENCES public.operations(id) ON DELETE CASCADE,
+      type text NOT NULL,
+      quantity numeric NOT NULL,
+      price numeric,
+      reason text,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL
+    );
+
+    ALTER TABLE public.movements ENABLE ROW LEVEL SECURITY;
+
+    CREATE POLICY "Enable read access for users based on user_id" ON public.movements
+      FOR SELECT USING (auth.uid() = user_id);
+
+    CREATE POLICY "Enable insert for users based on user_id" ON public.movements
+      FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+    CREATE POLICY "Enable update for users based on user_id" ON public.movements
+      FOR UPDATE USING (auth.uid() = user_id);
+
+    CREATE POLICY "Enable delete for users based on user_id" ON public.movements
+      FOR DELETE USING (auth.uid() = user_id);
+    ```
+    *   **Explicação:** Tabela para registrar movimentos de estoque, vinculada a `items` e `operations`.
+
+---
+
+Após criar todas as tabelas, você pode verificar se elas foram criadas corretamente clicando em "Table Editor" no menu lateral.
+
+Quando terminar de criar as tabelas, me avise para que possamos prosseguir com a integração no código do seu projeto.

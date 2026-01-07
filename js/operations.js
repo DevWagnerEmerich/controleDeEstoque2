@@ -1,6 +1,7 @@
-import { items, suppliers, operationsHistory, movements, saveData, pendingPurchaseOrders } from './database.js';
+import { items, suppliers, operationsHistory, movements, pendingPurchaseOrders, addOperation, addSupplier, addItem, addMovement, updateItem, deletePurchaseOrder } from './database.js';
 import { showNotification, openModal, closeModal, formatCurrency, fullUpdate, normalizeCnpj } from './ui.js'; // Added normalizeCnpj
-import { checkPermission } from './auth.js';
+import { escapeHTML } from './utils/helpers.js';
+import { checkPermission, getCurrentUserProfile } from './auth.js';
 
 let currentOperation = { id: null, items: [], isEditing: false };
 
@@ -24,14 +25,14 @@ function openOperationModal(itensPreenchidos = null) {
                 currentOperation.items.push({
                     ...itemDeEstoque,
                     operationQuantity: prodImportado.quantity,
-                    operationPrice: prodImportado.costPrice 
+                    operationPrice: prodImportado.costPrice
                 });
             }
         });
     } else {
         document.getElementById('operation-modal-title').innerText = 'Nova Operação de Saída';
     }
-    
+
     document.getElementById('operation-id').innerText = `ID: ${currentOperation.id}`;
     renderOperationAvailableItems();
     renderOperationSelectedItems();
@@ -61,7 +62,7 @@ function renderOperationAvailableItems() {
 
         div.innerHTML = `
             <div class="op-item-info">
-                <p class="op-item-name">${item.name}</p>
+                <p class="op-item-name">${escapeHTML(item.name)}</p>
                 <p class="op-item-stock">Em stock: ${stockDisplay}</p>
             </div>
             <div class="op-item-actions">
@@ -85,7 +86,7 @@ function addItemToOperation(itemId) {
     const item = { ...items.find(i => i.id === itemId) };
     const qtyBoxInput = document.getElementById(`op-qty-box-${itemId}`);
     const priceInput = document.getElementById(`op-price-${itemId}`);
-    
+
     const quantityInBoxes = parseInt(qtyBoxInput.value);
     const price = parseFloat(priceInput.value);
 
@@ -93,7 +94,7 @@ function addItemToOperation(itemId) {
         showNotification("Por favor, insira uma quantidade válida.", "warning");
         return;
     }
-    
+
     const quantityInUnits = quantityInBoxes * (item.unitsPerPackage || 1);
 
     if (quantityInUnits > item.quantity) {
@@ -125,14 +126,14 @@ function renderOperationSelectedItems() {
     currentOperation.items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'op-item-card selected';
-        
+
         const boxes = (item.unitsPerPackage > 0) ? Math.floor(item.operationQuantity / item.unitsPerPackage) : 0;
         const packageLabel = item.packageType === 'fardo' ? (boxes === 1 ? 'fardo' : 'fardos') : (boxes === 1 ? 'caixa' : 'caixas');
         const selectedDisplay = `${boxes} ${packageLabel}`;
 
         div.innerHTML = `
             <div class="op-item-info">
-                <p class="op-item-name">${item.name}</p>
+                <p class="op-item-name">${escapeHTML(item.name)}</p>
                 <p class="op-item-stock">A sair: ${selectedDisplay} @ ${formatCurrency(item.operationPrice, 'BRL')}</p>
             </div>
             <button onclick="removeItemFromOperation('${item.id}')" class="btn-remove-op">
@@ -174,7 +175,7 @@ function updateOperationSummary() {
         totalNetWeight += itemNetWeight;
         totalAmount += item.operationQuantity * item.operationPrice;
     });
-    
+
     const totalGrossWeight = totalNetWeight * 1.035;
 
     summaryContainer.innerHTML = `
@@ -197,45 +198,60 @@ function updateOperationSummary() {
     `;
 }
 
-function saveManualOperation() {
+async function saveManualOperation() {
     if (currentOperation.items.length === 0) {
-        showNotification("Adicione pelo menos um item à operação antes de finalizar.", 'warning');
+        showNotification("Adicione pelo menos um item à operação antes de finalizar.", "warning");
+        return;
+    }
+
+    const currentUser = getCurrentUserProfile();
+    if (!currentUser) {
+        showNotification('Usuário não autenticado. Não é possível salvar a operação.', 'danger');
         return;
     }
 
     // Cria uma cópia segura da operação para salvar
     const operationToSave = {
         ...currentOperation,
+        user_id: currentUser.id,
         items: JSON.parse(JSON.stringify(currentOperation.items)), // Garante uma cópia profunda
         type: 'manual'
     };
 
-    // Salva a operação no histórico
-    operationsHistory.push(operationToSave);
-    saveData(); // Salva os dados imediatamente
+    try {
+        // Salva a operação no Supabase
+        await addOperation(operationToSave);
 
-    showNotification(`Operação ${operationToSave.id} criada com sucesso!`, 'success');
+        // Salva a operação no histórico local
+        operationsHistory.push(operationToSave);
 
-    // Atualiza o stock e cria os registos de movimento
-    currentOperation.items.forEach(opItem => {
-        const itemIndex = items.findIndex(i => i.id === opItem.id);
-        if (itemIndex > -1) {
-            items[itemIndex].quantity -= opItem.operationQuantity;
-        }
-        const movement = {
-            id: `mov_${Date.now()}_${opItem.id}`,
-            itemId: opItem.id, type: 'out', quantity: opItem.operationQuantity,
-            price: opItem.operationPrice, reason: `Saída por Operação`,
-            operationId: currentOperation.id, date: currentOperation.date
-        };
-        movements.push(movement);
-    });
-    
-    closeModal('operation-modal');
-    fullUpdate(); // Atualiza a UI
+        showNotification(`Operação ${operationToSave.id} criada e salva com sucesso!`, 'success');
 
-    // Dispara um evento para notificar que a operação foi salva
-    document.dispatchEvent(new CustomEvent('operation-saved'));
+        // Atualiza o stock e cria os registos de movimento
+        currentOperation.items.forEach(opItem => {
+            const itemIndex = items.findIndex(i => i.id === opItem.id);
+            if (itemIndex > -1) {
+                items[itemIndex].quantity -= opItem.operationQuantity;
+            }
+            const movement = {
+                id: `mov_${Date.now()}_${opItem.id}`,
+                itemId: opItem.id, type: 'out', quantity: opItem.operationQuantity,
+                price: opItem.operationPrice, reason: `Saída por Operação`,
+                operationId: currentOperation.id, date: currentOperation.date
+            };
+            movements.push(movement);
+        });
+
+        closeModal('operation-modal');
+        fullUpdate(); // Atualiza a UI
+
+        // Dispara um evento para notificar que a operação foi salva
+        document.dispatchEvent(new CustomEvent('operation-saved'));
+
+    } catch (error) {
+        showNotification(`Erro ao salvar operação manual: ${error.message}`, 'danger');
+        console.error("Falha ao salvar operação manual:", error);
+    }
 }
 
 function regenerateDocument(operationId, docType) {
@@ -247,7 +263,7 @@ function regenerateDocument(operationId, docType) {
 
     const dataForDocument = {
         operation: operationData,
-        allSuppliers: suppliers 
+        allSuppliers: suppliers
     };
 
     if (docType === 'invoice') {
@@ -261,93 +277,115 @@ function regenerateDocument(operationId, docType) {
 }
 window.regenerateDocument = regenerateDocument;
 
-function finalizarOperacaoDeImportacao(stagedNfeData, operationId) {
-    stagedNfeData.forEach(nfe => {
+async function finalizarOperacaoDeImportacao(stagedNfeData, operationId) {
+    for (const nfe of stagedNfeData) {
         const { fornecedor, produtos, notaFiscal } = nfe;
 
-        // 1. Garante que o fornecedor existe
-        const nfeCnpj = fornecedor.cnpj ? normalizeCnpj(fornecedor.cnpj) : '';
-        let supplier = nfeCnpj ? suppliers.find(s => normalizeCnpj(s.cnpj) === nfeCnpj) : null;
-        if (!supplier) {
-            supplier = {
-                id: `sup_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                name: fornecedor.nome,
-                cnpj: fornecedor.cnpj,
-                address: fornecedor.address || '' // Inclui o endereço
-            };
-            suppliers.push(supplier);
-            showNotification(`Novo fornecedor "${supplier.name}" registado.`, 'info');
-        } else {
-            // Atualiza o endereço do fornecedor existente, caso tenha mudado ou não estivesse preenchido
-            if (fornecedor.address && fornecedor.address !== supplier.address) {
-                supplier.address = fornecedor.address;
-            }
-        }
+        try {
+            // 1. Garante que o fornecedor existe no DB
+            const nfeCnpj = fornecedor.cnpj ? normalizeCnpj(fornecedor.cnpj) : '';
+            let supplier = nfeCnpj ? suppliers.find(s => normalizeCnpj(s.cnpj) === nfeCnpj) : null;
 
-        produtos.forEach(prod => {
-            // 2. Garante que o item existe no estoque (por código e fornecedor)
-            let existingItem = items.find(item => item.code === prod.code && item.supplierId === supplier.id);
-            if (!existingItem) {
-                const newItem = {
-                    id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    name: prod.name,
-                    nameEn: '',
-                    code: prod.code,
-                    ncm: prod.ncm,
-                    description: `Importado via NF-e ${notaFiscal.numero}`,
-                    quantity: 0, // Começa com 0 pois a entrada e saída são na mesma operação
-                    minQuantity: 10,
-                    costPrice: prod.costPrice,
-                    salePrice: prod.costPrice * 1.25, // Lógica de preço de venda padrão
-                    supplierId: supplier.id,
-                    image: null,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
+            if (!supplier) {
+                const currentUser = getCurrentUserProfile();
+                if (!currentUser) {
+                    showNotification('Erro: Usuário não autenticado para criar fornecedor.', 'danger');
+                    continue; // Pula para a próxima NFe
+                }
+                const newSupplierData = {
+                    name: fornecedor.nome,
+                    cnpj: fornecedor.cnpj,
+                    address: fornecedor.address || '',
+                    user_id: currentUser.id // <-- CORREÇÃO AQUI
                 };
-                items.push(newItem);
-                existingItem = newItem;
-                showNotification(`Novo item "${newItem.name}" registado no estoque.`, 'info');
+                supplier = await addSupplier(newSupplierData);
+                suppliers.push(supplier);
+                showNotification(`Novo fornecedor "${supplier.name}" salvo.`, 'info');
             }
 
-            const itemId = existingItem.id;
+            for (const prod of produtos) { // Loop through each product in the NFe
+                // 2. Garante que o item existe no DB (associado a este fornecedor)
+                let existingItem = items.find(item => item.code === prod.code && item.supplier_id === supplier.id);
 
-            // 3. Cria o movimento de ENTRADA
-            const inMovement = {
-                id: `mov_in_${Date.now()}_${prod.code}`,
-                itemId: itemId,
-                type: 'in',
-                quantity: prod.quantity,
-                price: prod.costPrice,
-                reason: `Entrada via NF-e: ${notaFiscal.numero}`,
-                date: new Date().toISOString()
-            };
-            movements.push(inMovement);
+                if (!existingItem) {
+                    const currentUser = getCurrentUserProfile();
+                    if (!currentUser) {
+                        showNotification('Erro: Usuário não autenticado.', 'danger');
+                        continue;
+                    }
+                    const newItemData = {
+                        user_id: currentUser.id,
+                        name: prod.name,
+                        code: prod.code,
+                        ncm: prod.ncm,
+                        description: `Importado via NF-e ${notaFiscal.numero}`,
+                        quantity: 0, // Quantidade no "catálogo" é 0, as movimentações controlam o fluxo
+                        min_quantity: 0,
+                        cost_price: prod.costPrice,
+                        sale_price: prod.costPrice * 1.25,
+                        supplier_id: supplier.id,
+                    };
+                    existingItem = await addItem(newItemData);
+                    items.push(existingItem);
+                    showNotification(`Novo item "${existingItem.name}" salvo.`, 'info');
+                }
 
-            // 4. Cria o movimento de SAÍDA para a operação
-            const outMovement = {
-                id: `mov_out_${Date.now()}_${prod.code}`,
-                itemId: itemId,
-                type: 'out',
-                quantity: prod.quantity,
-                price: prod.costPrice, // Usando o preço de custo para a saída também
-                reason: `Saída por Operação de Importação`,
-                operationId: operationId,
-                date: new Date().toISOString()
-            };
-            movements.push(outMovement);
-        });
-    });
+                const itemId = existingItem.id;
+                const currentUser = getCurrentUserProfile(); // Pega o usuário atual
+                if (!currentUser) {
+                    showNotification('Erro: Usuário não autenticado para criar movimentação.', 'danger');
+                    continue;
+                }
 
-    showNotification(`Movimentos de entrada/saída para ${stagedNfeData.length} NF-e(s) foram registados.`, 'success');
+                // 3. Cria o movimento de ENTRADA no DB
+                const inMovement = {
+                    user_id: currentUser.id, // <-- CORREÇÃO AQUI
+                    item_id: itemId,
+                    type: 'in',
+                    quantity: prod.quantity,
+                    price: prod.costPrice,
+                    reason: `Entrada via NF-e: ${notaFiscal.numero}`,
+                    operation_id: operationId,
+                    date: new Date().toISOString()
+                };
+                const newInMovement = await addMovement(inMovement);
+                movements.push(newInMovement);
+
+                // 4. Cria o movimento de SAÍDA no DB
+                const outMovement = {
+                    user_id: currentUser.id, // <-- CORREÇÃO AQUI
+                    item_id: itemId,
+                    type: 'out',
+                    quantity: prod.quantity,
+                    price: prod.costPrice,
+                    reason: `Saída para Exportação (Op: ${operationId})`,
+                    operation_id: operationId,
+                    date: new Date().toISOString()
+                };
+                const newOutMovement = await addMovement(outMovement);
+                movements.push(newOutMovement);
+            }
+        } catch (error) {
+            showNotification(`Erro ao processar NF-e: ${error.message}`, 'danger');
+            console.error('Erro em finalizarOperacaoDeImportacao:', error);
+        }
+    }
+    showNotification(`Movimentações da NF-e foram registradas no banco de dados.`, 'success');
     fullUpdate();
 }
 
 export { openOperationModal, saveManualOperation, finalizarOperacaoDeImportacao, regenerateDocument };
 
-export function stockInPurchaseOrder(orderId) {
+export async function stockInPurchaseOrder(orderId) {
     const orderIndex = pendingPurchaseOrders.findIndex(op => op.id === orderId);
     if (orderIndex === -1) {
         showNotification("Ordem de compra não encontrada.", "danger");
+        return;
+    }
+
+    const currentUser = getCurrentUserProfile();
+    if (!currentUser) {
+        showNotification('Usuário não autenticado. Não é possível salvar a operação.', 'danger');
         return;
     }
 
@@ -381,13 +419,17 @@ export function stockInPurchaseOrder(orderId) {
 
     // --- PART 2: Transform the OC into an OP (Ordem de Saída) ---
     const finalOperation = orderToProcess; // Work on the same object reference
+    finalOperation.user_id = currentUser.id; // Add user_id
 
     // Preserve original OC id for reference if needed, then create the new OP id
-    finalOperation.purchaseOrderId = finalOperation.id; 
+    finalOperation.purchaseOrderId = finalOperation.id;
     finalOperation.id = finalOperation.id.replace('OC-', 'OP-');
     finalOperation.type = 'manual'; // Or a more specific type like 'sale_from_po'
     finalOperation.status = 'completed';
     finalOperation.date = new Date().toISOString(); // Update date to reflect completion time
+
+    // This property is not needed in the final operation
+    delete finalOperation.xml_attached;
 
     // --- PART 3: Create OUTgoing movements for the new OP ---
     finalOperation.items.forEach(saleItem => {
@@ -410,13 +452,24 @@ export function stockInPurchaseOrder(orderId) {
     });
 
     // --- PART 4: Move the transformed operation to the main history ---
-    operationsHistory.push(finalOperation);
-    pendingPurchaseOrders.splice(orderIndex, 1); // Remove from pending list
+    // This is done after successful save
 
-    // --- PART 5: Save and Notify ---
-    saveData();
-    showNotification(`Ordem de Compra ${finalOperation.purchaseOrderId} processada. Operação de Saída ${finalOperation.id} criada.`, 'success');
+    try {
+        // --- PART 5: Save and Notify ---
+        await addOperation(finalOperation);
+        showNotification(`Ordem de Compra ${finalOperation.purchaseOrderId} processada. Operação de Saída ${finalOperation.id} criada e salva.`, 'success');
 
-    // --- PART 6: Redirect to document generation for the new OP ---
-    regenerateDocument(finalOperation.id, 'invoice');
+        // --- PART 6: Delete original OC and update local state ---
+        await deletePurchaseOrder(orderId);
+        operationsHistory.push(finalOperation);
+        pendingPurchaseOrders.splice(orderIndex, 1);
+
+        // --- PART 7: Redirect to document generation for the new OP ---
+        regenerateDocument(finalOperation.id, 'invoice');
+
+    } catch (error) {
+        showNotification(`Erro ao salvar operação da Ordem de Compra: ${error.message}`, 'danger');
+        console.error("Falha ao salvar operação da OC:", error);
+        // NOTE: We don't update the local state if the DB save fails, to allow for a retry.
+    }
 }

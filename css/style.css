@@ -408,6 +408,20 @@ body.modal-is-open {
 
 .card-info-value {
     font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px; /* Prevent overflow */
+}
+
+@media (max-width: 400px) {
+    .items-grid {
+        grid-template-columns: 1fr; /* Full width on very small screens */
+    }
+    .card-info-row {
+        font-size: 0.85rem;
+    }
 }
 
 .card-footer {
@@ -1072,4 +1086,40 @@ body.modal-is-open {
 
 .dropdown-item span {
     white-space: nowrap; /* Prevent line breaks */
+}
+
+/* Loading Overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    color: white;
+    font-size: 1.1rem;
+}
+
+.loading-overlay.hidden {
+    display: none;
+}
+
+.spinner {
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top: 4px solid #fff;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }

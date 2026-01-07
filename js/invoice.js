@@ -1,3 +1,6 @@
+import { updateOperation, updatePurchaseOrder } from './database.js';
+import { escapeHTML } from './utils/helpers.js';
+
 let nfeData = {}; // Global variable to hold the entire NFe data object
 let allItems = []; // Holds the main stock items for NCM lookup
 
@@ -10,10 +13,36 @@ function parseBrazilianNumber(str) {
     }
     str = str.trim();
     if (!str) return 0;
-    // Remove thousands separators (dots) and replace decimal comma with dot
-    const numberStr = str.replace(/\./g, '').replace(/,/g, '.');
-    const parsed = parseFloat(numberStr);
-    return isNaN(parsed) ? 0 : parsed;
+
+    const hasComma = str.includes(',');
+    const hasDot = str.includes('.');
+
+    // Case 1: Only dots (e.g., "22.50" or "1000"). Treat as US/Standard float.
+    if (hasDot && !hasComma) {
+        return parseFloat(str);
+    }
+
+    // Case 2: Only commas (e.g., "22,50"). Treat as BR.
+    if (hasComma && !hasDot) {
+        return parseFloat(str.replace(',', '.'));
+    }
+
+    // Case 3: Both separators (mixed). Check which comes last to determine format.
+    if (hasDot && hasComma) {
+        const lastDotIndex = str.lastIndexOf('.');
+        const lastCommaIndex = str.lastIndexOf(',');
+
+        if (lastDotIndex > lastCommaIndex) {
+            // US format: "1,234.50" (comma is thousands, dot is decimal)
+            return parseFloat(str.replace(/,/g, ''));
+        } else {
+            // BR format: "1.234,50" (dot is thousands, comma is decimal)
+            return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+        }
+    }
+
+    // Case 4: No separators (e.g., "1000")
+    return parseFloat(str);
 }
 
 function parseQtyUnit(qtyUnitString) {
@@ -61,7 +90,7 @@ function parseQtyUnit(qtyUnitString) {
 function updatePreview() {
     console.log("Updating preview...");
     const preview = document.getElementById('invoice-preview');
-    
+
     const {
         invoiceNumber,
         invoiceDate,
@@ -103,7 +132,7 @@ function updatePreview() {
                     const priceBRL = parseFloat(item.price) || 0;
                     const qty = parseFloat(item.qty) || 0;
                     const currentItemTotalBRL = priceBRL * qty;
-                    
+
                     const proportion = (totalBRL > 0) ? currentItemTotalBRL / totalBRL : 0;
                     const itemAmountToAdd = amountToAddBRL * proportion;
                     const newItemTotalBRL = currentItemTotalBRL + itemAmountToAdd;
@@ -121,21 +150,25 @@ function updatePreview() {
 
     const alibrasLogoUrl = 'images/alibras-logo.png';
     const secondaryLogoUrl = 'images/loia-logo.png';
-    
-    let formattedFooterInfo = footerInfo
+
+    let formattedFooterInfo = escapeHTML(footerInfo)
         .replace(/(Bank Information :)/g, '<b>$1</b>')
         .replace(/(Credit To :)/g, '<b>$1</b>')
         .replace(/(Payment Term :)/g, '<b>$1</b>')
         .replace(/\n/g, '<br>');
 
     if (ptaxRate && ptaxRate > 0) {
+        // PTAX line is system generated, safe to append
         const ptaxLine = `PTAX: ${ptaxRate.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} USD`;
-        let newFooterInfo = footerInfo;
+        let newFooterInfo = escapeHTML(footerInfo); // Escape base footer first
+
         if (newFooterInfo.match(/PTAX/i)) {
+            // If PTAX was already there (maybe from a previous edit that got saved safely), replace it
             newFooterInfo = newFooterInfo.replace(/PTAX.*(?:\n|$)/i, ptaxLine + '\n');
         } else {
             newFooterInfo += `\n${ptaxLine}`;
         }
+
         formattedFooterInfo = newFooterInfo
             .replace(/(Bank Information :)/g, '<b>$1</b>')
             .replace(/(Credit To :)/g, '<b>$1</b>')
@@ -161,33 +194,30 @@ function updatePreview() {
     distributedSuppliers.forEach((supplier, groupIndex) => {
         supplier.items.forEach((item, itemIndex) => {
             const qty = parseFloat(item.qty) || 0;
-            const ncm = item.ncm;
-            const descPt = item.desc;
-            const descEn = item.nameEn;
-            let descriptionHtml = ''; // Initialize as empty for the main field
-            if (descEn) {
-                descriptionHtml = descEn;
-                if (descPt) { // Only add Portuguese if it exists
-                    descriptionHtml += `<br><small style="color: #555;">${descPt}</small>`;
-                }
-            } else if (descPt) { // If no English name, but Portuguese exists, display Portuguese as secondary
-                descriptionHtml = `<br><small style="color: #555;">${descPt}</small>`;
+            const ncm = escapeHTML(item.ncm);
+            const descPt = escapeHTML(item.desc);
+            const descEn = escapeHTML(item.nameEn);
+
+            // Lógica de exibição corrigida de acordo com o requisito
+            let descriptionHtml = descEn || ''; // Nome em inglês como principal, ou string vazia se não existir.
+            if (descPt) { // Adiciona sempre o nome em português abaixo, se existir.
+                descriptionHtml += `<br><small style="color: #555;">${descPt}</small>`;
             }
 
-            const qty_unit = item.qty_unit;
+            const qty_unit = escapeHTML(item.qty_unit);
             const qty_kg = parseFloat(item.qty_kg) || 0;
 
 
-            const um = item.um;
+            const um = escapeHTML(item.um);
             const priceBRL = parseFloat(item.price) || 0;
-            
+
             const priceUSD = isValidRate ? priceBRL / ptaxRate : priceBRL;
             const totalUSD = qty_kg * priceUSD;
 
             productSubtotalUSD += totalUSD;
             totalPackages += qty;
             netWeight += qty_kg;
-            
+
             const formattedPriceUSD = priceUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const formattedTotalUSD = totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const formattedQtyKg = qty_kg.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -198,43 +228,43 @@ function updatePreview() {
                     <td class="text-center editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.ncm">${ncm}</td>
                     <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.desc">${descriptionHtml}</td>
                     <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.qty_unit">${qty_unit}</td>
-                    <td class="text-center">${formattedQtyKg}</td>
+                    <td class="text-center editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.qty_kg">${formattedQtyKg}</td>
                     <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.um">${um}</td>
                     <td class="text-right editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.price">${formattedPriceUSD}</td>
                     <td class="text-center bold">${formattedTotalUSD}</td>
                 </tr>
             `;
         });
-        
+
         const supplierInfo = supplier.info;
         if (supplierInfo) {
             itemsAndSuppliersHTML += `
                 <tr>
-                    <td colspan="8" class="supplier-info-cell editable-field" data-target-id="suppliers.${groupIndex}.info">${supplierInfo.replace(/\n/g, '<br>')}</td>
+                    <td colspan="8" class="supplier-info-cell editable-field" data-target-id="suppliers.${groupIndex}.info">${escapeHTML(supplierInfo).replace(/\n/g, '<br>')}</td>
                 </tr>
             `;
         }
     });
-    
+
     const totalRows = itemsAndSuppliersHTML.match(/<tr/g)?.length || 0;
     for (let i = totalRows; i < 24; i++) {
         itemsAndSuppliersHTML += `<tr><td colspan="8">&nbsp;</td></tr>`;
     }
-    
+
     let costsHTML = '';
     let costsSubtotalUSD = 0;
-            costs.forEach((cost, costIndex) => {
-                const desc = cost.desc;
-                const valueBRL = parseFloat(cost.value) || 0;
-                const valueUSD = isValidRate ? valueBRL / ptaxRate : valueBRL;
-                costsSubtotalUSD += valueUSD;
-                costsHTML += `
+    costs.forEach((cost, costIndex) => {
+        const desc = escapeHTML(cost.desc);
+        const valueBRL = parseFloat(cost.value) || 0;
+        const valueUSD = isValidRate ? valueBRL / ptaxRate : valueBRL;
+        costsSubtotalUSD += valueUSD;
+        costsHTML += `
                     <tr>
                         <td colspan="7" class="text-right bold editable-field" data-target-id="costs.${costIndex}.desc">${desc}</td>
                         <td class="text-center bold editable-field" data-target-id="costs.${costIndex}.value">${valueUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     </tr>
                 `;
-            });    
+    });
     const grandTotalUSD = productSubtotalUSD + costsSubtotalUSD;
 
     let finalNetWeight = nfeData.notaFiscal?.pesoLiquido > 0 ? nfeData.notaFiscal.pesoLiquido : netWeight;
@@ -258,11 +288,11 @@ function updatePreview() {
                         <img src="${alibrasLogoUrl}" alt="Alibras Logo" style="max-width: 250px; max-height: 120px; object-fit: contain;">
                     </td>
                     <td colspan="5" rowspan="9" style="vertical-align: top; padding: 6px; line-height: 1.4;" class="editable-field" data-target-id="exporterInfo">
-                        ${exporterInfo.replace(/\n/g, '<br>')}
+                        ${escapeHTML(exporterInfo).replace(/\n/g, '<br>')}
                     </td>
                 </tr>
                 <tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
-                <tr><td colspan="8" class="text-center bold editable-field">INVOICE ${invoiceNumber}</td></tr>
+                <tr><td colspan="8" class="text-center bold editable-field">INVOICE ${escapeHTML(invoiceNumber)}</td></tr>
                 <tr>
                     <td colspan="3" class="header-bg bold">IMPORTER&nbsp;</td>
                     <td colspan="5" class="header-bg bold">INVOICE DETAILS</td>
@@ -270,20 +300,20 @@ function updatePreview() {
                 <tr>
                     <td colspan="3" rowspan="7" class="italic" style="vertical-align: center; padding: 6px;">
                         <div style="display: flex; align-items: center; height: 100%;">
-                        <div class="editable-field" data-target-id="importerInfo" style="white-space: pre-wrap; width: 60%; flex-shrink: 0;">${importerInfo.replace(/\n/g, '<br>')}</div>
+                        <div class="editable-field" data-target-id="importerInfo" style="white-space: pre-wrap; width: 60%; flex-shrink: 0;">${escapeHTML(importerInfo).replace(/\n/g, '<br>')}</div>
                             <div style="width: 40%; text-align: center;">
                                 <img src="${secondaryLogoUrl}" alt="Secondary Logo" style="max-width: 190px; max-height: 120px; object-fit: contain;">
                             </div>
                         </div>
                     </td>
                     <td colspan="5" rowspan="7" class="bold" style="vertical-align: top; padding: 6px; line-height: 1.6;">
-                        <u>INVOICE&nbsp;NUMBER:&nbsp;</u> <span class="editable-field" data-target-id="invoiceNumber">${invoiceNumber}</span><br>
-                        <u>DATE:&nbsp;</u> <span class="editable-field" data-target-id="invoiceDate">${formattedDate}</span><br>
-                        <u>PAYMENT&nbsp;TERM:&nbsp;</u> <span class="editable-field" data-target-id="paymentTerm">${paymentTerm}</span><br>
-                        <u>&nbsp;PORT&nbsp;OF&nbsp;DEPARTURE&nbsp;:&nbsp;</u> <span class="editable-field" data-target-id="portOfDeparture">${portOfDeparture}</span><br>
-                        <u>DESTINATION&nbsp;AIR&nbsp;PORT&nbsp;:&nbsp;</u> <span class="editable-field" data-target-id="destinationPort">${destinationPort}</span><br>
-                        <u>INCOTERM :</u> <span class="editable-field" data-target-id="incoterm">${incoterm}</span><br>
-                        <u>BOOKING:&nbsp;</u> <span class="editable-field" data-target-id="booking">${booking}</span>
+                        <u>INVOICE&nbsp;NUMBER:&nbsp;</u> <span class="editable-field" data-target-id="invoiceNumber">${escapeHTML(invoiceNumber)}</span><br>
+                        <u>DATE:&nbsp;</u> <span class="editable-field" data-target-id="invoiceDate">${escapeHTML(formattedDate)}</span><br>
+                        <u>PAYMENT&nbsp;TERM:&nbsp;</u> <span class="editable-field" data-target-id="paymentTerm">${escapeHTML(paymentTerm)}</span><br>
+                        <u>&nbsp;PORT&nbsp;OF&nbsp;DEPARTURE&nbsp;:&nbsp;</u> <span class="editable-field" data-target-id="portOfDeparture">${escapeHTML(portOfDeparture)}</span><br>
+                        <u>DESTINATION&nbsp;AIR&nbsp;PORT&nbsp;:&nbsp;</u> <span class="editable-field" data-target-id="destinationPort">${escapeHTML(destinationPort)}</span><br>
+                        <u>INCOTERM :</u> <span class="editable-field" data-target-id="incoterm">${escapeHTML(incoterm)}</span><br>
+                        <u>BOOKING:&nbsp;</u> <span class="editable-field" data-target-id="booking">${escapeHTML(booking)}</span>
                     </td>
                 </tr>
                 <tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
@@ -342,51 +372,20 @@ function printInvoice() {
 
 
 
-function saveChanges() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const origin = urlParams.get('origin');
-
-    // --- NEW LOGIC: Check if origin is simulation and update sessionStorage ---
-    if (origin === 'simulation') {
-        const simDataString = sessionStorage.getItem('simulationReturnData');
-        if (simDataString) {
-            const simulationData = JSON.parse(simDataString);
-            
-            // Flatten the updated items from the invoice
-            const updatedInvoiceItems = invoiceData.suppliers.flatMap(s => s.items);
-
-            // Update items in the simulation data
-            simulationData.items.forEach(simItem => {
-                const updatedItem = updatedInvoiceItems.find(invItem => invItem.id === simItem.id);
-                if (updatedItem) {
-                    // The key property to update is 'operationQuantity' in the simulation
-                    simItem.operationQuantity = parseBrazilianNumber(updatedItem.qty.toString());
-                    // Also update the price, as it might have been edited
-                    simItem.operationPrice = parseBrazilianNumber(updatedItem.price.toString());
-                }
-            });
-
-            // Save the modified simulation data back to sessionStorage
-            sessionStorage.setItem('simulationReturnData', JSON.stringify(simulationData));
-            showNotification('Quantidades da simulação atualizadas!', 'info');
-        }
-    }
-    // --- END NEW LOGIC ---
-
+async function saveChanges() {
     const documentDataString = localStorage.getItem('currentDocument');
     if (!documentDataString) {
         showNotification("Erro: Dados da operação não encontrados para salvar.", "danger");
         return;
     }
-
     const documentData = JSON.parse(documentDataString);
+    const operationId = documentData.operation.id;
 
-    // Reconstruct the operation object from the global invoiceData, preserving the original ID
-    const updatedOperation = {
-        ...documentData.operation, // Keeps original id and other properties
+    // Reconstruct the operation object from the global invoiceData
+    const updatedOperationData = {
         invoiceNumber: invoiceData.invoiceNumber,
-        invoiceDate: invoiceData.invoiceDate,
-        exporterInfo: invoiceData.exporterInfo, // <-- ADD THIS LINE
+        date: invoiceData.invoiceDate,
+        exporterInfo: invoiceData.exporterInfo,
         importerInfo: invoiceData.importerInfo,
         booking: invoiceData.booking,
         paymentTerm: invoiceData.paymentTerm,
@@ -399,56 +398,32 @@ function saveChanges() {
         manualNetWeight: invoiceData.manualNetWeight,
         manualGrossWeight: invoiceData.manualGrossWeight,
         distribution: invoiceData.distribution,
-        suppliers: invoiceData.suppliers
-    };
-    
-    updatedOperation.items = invoiceData.suppliers.flatMap(s => s.items);
-
-    const newDocumentData = {
-        ...documentData,
-        operation: updatedOperation
+        suppliers: invoiceData.suppliers,
+        items: invoiceData.suppliers.flatMap(s => s.items)
     };
 
-    // 1. Save the current document view for immediate reload consistency
-    localStorage.setItem('currentDocument', JSON.stringify(newDocumentData));
+    const urlParams = new URLSearchParams(window.location.search);
+    const origin = urlParams.get('origin');
 
-    // 2. Directly update the correct localStorage key based on origin
-    if (origin === 'purchase-orders') {
-        const pendingPOsString = localStorage.getItem('stockPendingPOs_v1');
-        if (pendingPOsString) {
-            const pendingPOs = JSON.parse(pendingPOsString);
-            const poIndex = pendingPOs.findIndex(po => po.id === documentData.operation.id);
-            if (poIndex > -1) {
-                pendingPOs[poIndex] = updatedOperation;
-                localStorage.setItem('stockPendingPOs_v1', JSON.stringify(pendingPOs));
-                showNotification(`Ordem de Compra ${updatedOperation.id} atualizada com sucesso!`, 'success');
-            } else {
-                showNotification("Erro: Ordem de Compra não encontrada na lista de pendentes.", "danger");
-            }
+    try {
+        let savedData;
+        if (origin === 'purchase-orders') {
+            // It's a Purchase Order, so we update the 'purchase_orders' table
+            savedData = await updatePurchaseOrder(operationId, updatedOperationData);
+            showNotification(`Ordem de Compra ${savedData.id} atualizada com sucesso!`, 'success');
         } else {
-            showNotification("Erro: Banco de dados de Ordens de Compra pendentes (stockPendingPOs_v1) não encontrado.", "danger");
+            // It's a regular Operation, so we update the 'operations' table
+            savedData = await updateOperation(operationId, updatedOperationData);
+            showNotification(`Operação ${savedData.invoiceNumber} atualizada com sucesso no banco de dados!`, 'success');
         }
-    } else {
-        const operationsHistoryString = localStorage.getItem('stockOperations_v2');
-        if (operationsHistoryString) {
-            const operationsHistory = JSON.parse(operationsHistoryString);
-            // Find the operation by its stable, original ID
-            const opIndex = operationsHistory.findIndex(op => op.id === documentData.operation.id);
 
-            if (opIndex > -1) {
-                operationsHistory[opIndex] = updatedOperation;
-                
-                localStorage.setItem('stockOperations_v2', JSON.stringify(operationsHistory));
-                showNotification(`Operação ${updatedOperation.invoiceNumber} atualizada com sucesso!`, 'success');
-                console.log('stockOperations_v2 updated directly.');
-            } else {
-                // This case should ideally not happen if the document exists
-                // but we handle it just in case.
-                showNotification("Erro: Operação não encontrada no histórico principal.", "danger");
-            }
-        } else {
-            showNotification("Erro: Banco de dados de operações (stockOperations_v2) não encontrado.", "danger");
-        }
+        // Update the local copy in localStorage for immediate consistency
+        const newDocumentData = { ...documentData, operation: savedData };
+        localStorage.setItem('currentDocument', JSON.stringify(newDocumentData));
+
+    } catch (error) {
+        showNotification(`Erro ao salvar alterações no banco de dados: ${error.message}`, 'danger');
+        console.error('Falha ao atualizar via Supabase:', error);
     }
 }
 
@@ -493,7 +468,7 @@ function initialize() {
             invoiceData.suppliers = operation.suppliers;
             // Ensure nfeData is still available for weight calculations if needed
             if (operation.nfeData) {
-                 nfeData = { notaFiscal: { pesoLiquido: 0, pesoBruto: 0 } };
+                nfeData = { notaFiscal: { pesoLiquido: 0, pesoBruto: 0 } };
                 operation.nfeData.forEach(nfe => {
                     nfeData.notaFiscal.pesoLiquido += nfe.notaFiscal?.pesoLiquido || 0;
                     nfeData.notaFiscal.pesoBruto += nfe.notaFiscal?.pesoBruto || 0;
@@ -567,7 +542,7 @@ function initialize() {
                 invoiceData.suppliers.push(supplier);
             });
         } else { // Fallback for manual operations or other types
-             const itemsBySupplier = operation.items.reduce((acc, item) => {
+            const itemsBySupplier = operation.items.reduce((acc, item) => {
                 const supplierId = item.supplierId || 'unknown';
                 if (!acc[supplierId]) acc[supplierId] = [];
                 acc[supplierId].push(item);
@@ -589,7 +564,7 @@ function initialize() {
                     const isManual = item.operationQuantity !== undefined;
                     const opQty = isManual ? item.operationQuantity : (item.quantity || 0);
                     const opPrice = isManual ? item.operationPrice : (item.costPrice || 0);
-                    
+
                     let boxes;
                     if (operation.type === 'simulation_preview' || operation.type === 'simulation' || operation.type === 'purchase_order') {
                         boxes = opQty;
@@ -607,7 +582,7 @@ function initialize() {
                         supplierId: item.supplierId,
                         ncm: item.ncm || '',
                         desc: item.name || '',
-                        nameEn: item.nameEn || '',
+                        nameEn: item.name_en || '',
                         price: opPrice.toFixed(2),
                         qty_unit: finalQtyUnitValue,
                         qty_kg: finalQtyKgValue,
@@ -705,7 +680,7 @@ function initialize() {
         invoiceData.distribution.type = e.target.value;
     });
 
-    applyExchangeRateToggle.addEventListener('change', function() {
+    applyExchangeRateToggle.addEventListener('change', function () {
         const rate = parseFloat(ptaxRateInput.value);
         if (this.checked) {
             if (!isNaN(rate) && rate > 0) {
@@ -718,12 +693,12 @@ function initialize() {
         } else {
             // When toggling off, we only deactivate the rate for calculation,
             // but we don't nullify the data, so the input value is preserved.
-            invoiceData.ptaxRate = null; 
+            invoiceData.ptaxRate = null;
         }
         updatePreview();
     });
 
-    distributeValueToggle.addEventListener('change', function() {
+    distributeValueToggle.addEventListener('change', function () {
         const value = parseFloat(distributeValueInput.value);
         const type = distributeTypeInput.value;
 
@@ -745,6 +720,11 @@ function initialize() {
 
     document.getElementById('addCostBtn').addEventListener('click', addCost);
     document.getElementById('save-changes-btn').addEventListener('click', saveChanges);
+    document.getElementById('print-invoice-btn').addEventListener('click', printInvoice);
+    document.getElementById('packing-list-btn').addEventListener('click', async () => {
+        await saveChanges();
+        window.location.href = 'gerador_packing_list.html';
+    });
 
 
 
@@ -798,7 +778,7 @@ function showNotification(message, type = 'info', duration = 3000) {
 function initializeEditableFieldsInvoice() {
     const preview = document.getElementById('invoice-preview');
 
-    preview.addEventListener('click', function(e) {
+    preview.addEventListener('click', function (e) {
         const field = e.target.closest('.editable-field');
         if (!field) return;
 
@@ -808,10 +788,10 @@ function initializeEditableFieldsInvoice() {
         field.contentEditable = true;
         field.focus();
 
-        const onBlur = function() {
+        const onBlur = function () {
             this.contentEditable = false;
             this.isEditing = false;
-            
+
             const targetId = this.dataset.targetId;
             if (!targetId) return;
 
@@ -830,7 +810,7 @@ function initializeEditableFieldsInvoice() {
 
                 const [_, day, month, year] = match;
                 const isoDate = `${year}-${month}-${day}`;
-                
+
                 // More robust validation
                 const dateObj = new Date(isoDate + 'T00:00:00');
                 if (dateObj.getFullYear() != year || (dateObj.getMonth() + 1) != month || dateObj.getDate() != day) {
@@ -864,7 +844,7 @@ function initializeEditableFieldsInvoice() {
                 if (operationsHistoryString && documentDataString) {
                     const operationsHistory = JSON.parse(operationsHistoryString);
                     const documentData = JSON.parse(documentDataString);
-                    const isDuplicate = operationsHistory.some(op => 
+                    const isDuplicate = operationsHistory.some(op =>
                         op.invoiceNumber === numericValue && op.id !== documentData.operation.id
                     );
                     if (isDuplicate) {
@@ -891,6 +871,10 @@ function initializeEditableFieldsInvoice() {
                 temp[propertyName] = value;
             }
 
+            if (propertyName === 'qty_kg') {
+                temp.manualWeight = true;
+            }
+
             if (propertyName === 'qty' || propertyName === 'qty_unit') {
                 if (propertyName === 'qty_unit') {
                     const regex = /^(\d+)X(\d+)(G|GR|KG|L|ML)$/i;
@@ -902,7 +886,10 @@ function initializeEditableFieldsInvoice() {
                 }
 
                 const item = temp;
-                item.qty_kg = parseQtyUnit(item.qty_unit) * (parseFloat(item.qty) || 0);
+                // Only auto-calculate if manual override is NOT active
+                if (!item.manualWeight) {
+                    item.qty_kg = parseQtyUnit(item.qty_unit) * (parseFloat(item.qty) || 0);
+                }
             }
 
             // saveChanges(); // Removed to prevent notification on every blur

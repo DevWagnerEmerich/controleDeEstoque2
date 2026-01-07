@@ -1,0 +1,106 @@
+# Configuração da Supabase Edge Function para Atualizar Usuários
+
+Este documento contém os passos necessários para configurar e implantar a Edge Function `update-user` no Supabase, que irá lidar com a atualização segura de usuários (cargo e permissões).
+
+---
+
+### Passo 1: Criar o Arquivo da Função
+
+No seu terminal, na pasta raiz do projeto, execute o seguinte comando:
+
+```bash
+npx supabase functions new update-user
+```
+
+Isso criará o arquivo `supabase/functions/update-user/index.ts`.
+
+---
+
+### Passo 2: Adicionar o Código da Função (TypeScript)
+
+1.  Abra o arquivo `supabase/functions/update-user/index.ts` que acabou de ser criado.
+2.  **Substitua todo o conteúdo** deste arquivo pelo código TypeScript abaixo:
+
+    ```typescript
+    import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+    import { corsHeaders } from '../_shared/cors.ts'
+
+    // Esta função atualiza o cargo e as permissões de um usuário.
+    // Apenas administradores podem chamar esta função.
+
+    serve(async (req) => {
+      if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders })
+      }
+
+      try {
+        const { userId, role, permissions } = await req.json();
+
+        const supabaseAdmin = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+
+        // --- VERIFICAÇÃO DE SEGURANÇA ---
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) throw new Error('Authorization header missing');
+        
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user: adminUser } } = await supabaseAdmin.auth.getUser(token);
+        if (!adminUser) throw new Error('Invalid token');
+
+        const { data: adminProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('role')
+          .eq('id', adminUser.id)
+          .single();
+
+        if (adminProfile?.role !== 'admin') {
+          throw new Error('Permission denied: Only administrators can update users.');
+        }
+        // --- FIM DA VERIFICAÇÃO ---
+
+        // Atualiza o perfil do usuário alvo
+        const { data: updatedProfile, error: updateError } = await supabaseAdmin
+          .from('profiles')
+          .update({ role, permissions })
+          .eq('id', userId)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+
+        // Atualiza também os metadados na tabela auth.users para consistência
+        await supabaseAdmin.auth.admin.updateUserById(
+          userId,
+          { user_metadata: { role, permissions } }
+        );
+
+        return new Response(JSON.stringify(updatedProfile), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        });
+
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        });
+      }
+    })
+    ```
+
+---
+
+### Passo 3: Fazer o Deploy da Nova Função
+
+No seu terminal, na raiz do projeto, execute o seguinte comando:
+
+```bash
+npx supabase functions deploy update-user
+```
+
+---
+
+Por favor, siga estes passos. Me avise quando a função `update-user` estiver implantada com sucesso.

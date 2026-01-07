@@ -1,0 +1,77 @@
+-- Etapa 1: Habilitar a extensão 'http' (execute apenas uma vez)
+-- Esta extensão permite que funções do Postgres façam requisições HTTP.
+CREATE EXTENSION IF NOT EXISTS http;
+
+-- Etapa 2: Criar a função 'create_new_user'
+-- Esta função será responsável por criar um novo usuário no Supabase Auth
+-- e definir seu cargo na tabela 'public.users'.
+-- Ela é 'SECURITY DEFINER' para rodar com privilégios elevados e
+-- 'SET search_path' para garantir que encontre os schemas corretos.
+
+-- ATENÇÃO: Substitua os placeholders abaixo com seus valores reais do Supabase!
+-- 'SUA_SUPABASE_URL': Encontre em Supabase Dashboard -> Project Settings -> API -> Project URL
+-- 'SUA_SERVICE_ROLE_KEY': Encontre em Supabase Dashboard -> Project Settings -> API -> service_role (Secret)
+
+CREATE OR REPLACE FUNCTION create_new_user(
+  email_input text,
+  password_input text,
+  role_input text
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, extensions
+AS $$
+DECLARE
+  project_url text := 'https://edaednirrvsuvilnopbt.supabase.co'; -- URL já preenchida
+  service_role_key text := 'SUA_SERVICE_ROLE_KEY'; -- Substitua pela sua service_role (Secret)
+  response_json json;
+  new_user_id uuid;
+  calling_user_role text;
+BEGIN
+  -- 1. Verifica o cargo do usuário diretamente dos metadados de autenticação (à prova de RLS)
+  SELECT raw_app_meta_data->>'role' INTO calling_user_role FROM auth.users WHERE id = auth.uid();
+  
+  IF calling_user_role IS NULL OR calling_user_role <> 'admin' THEN
+    RAISE EXCEPTION 'Permission denied: Only administrators can create users.';
+  END IF;
+
+  -- 2. Cria o usuário no sistema de autenticação do Supabase (auth.users) via API interna
+  SELECT
+      http_post(
+          project_url || '/auth/v1/admin/users',
+          json_build_object(
+              'email', email_input,
+              'password', password_input,
+              'email_confirm', true
+          )::text,
+          'application/json',
+          json_build_object(
+              'apikey', service_role_key,
+              'Authorization', 'Bearer ' || service_role_key
+          )::text
+      )::json
+  INTO
+      response_json;
+
+  IF response_json->>'status' = '400' THEN
+    RAISE EXCEPTION 'Supabase Auth Error: %', response_json->>'message';
+  END IF;
+
+  new_user_id := (response_json->'id')::uuid;
+
+  -- 3. Atualiza o 'role' no perfil que o trigger 'on_auth_user_created' já criou
+  UPDATE public.profiles
+  SET role = role_input
+  WHERE id = new_user_id;
+
+  -- 4. Retorna o perfil completo do novo usuário
+  RETURN (SELECT json_build_object('id', id, 'email', email, 'role', role) FROM public.profiles WHERE id = new_user_id);
+
+EXCEPTION
+  WHEN unique_violation THEN
+    RAISE EXCEPTION 'User with this email already exists.';
+  WHEN others THEN
+    RAISE EXCEPTION 'An unexpected error occurred: %', SQLERRM;
+END;
+$$;

@@ -1,0 +1,18 @@
+{
+  "name": "controle-de-estoque-app",
+  "version": "1.0.0",
+  "description": "App de Controle de Estoque com Backend Python",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "client": "vite",
+    "server": "uvicorn api.index:app --reload --port 8000",
+    "build": "vite build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "vite": "^5.0.0"
+  }
+}

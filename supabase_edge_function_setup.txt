@@ -1,0 +1,190 @@
+# Configuração da Supabase Edge Function para Criar Usuários
+
+Este documento contém todos os passos necessários para configurar e implantar a Edge Function `create-user` no Supabase, que irá lidar com a criação segura de usuários.
+
+---
+
+### **Passo 1: Instalar e Configurar a Supabase CLI**
+
+Você precisará de um terminal (Prompt de Comando, PowerShell, Git Bash) para estas instruções.
+
+1.  **Instale a Supabase CLI:** Se você ainda não a tem, instale-a globalmente no seu sistema. Certifique-se de ter o [Node.js](https://nodejs.org/) instalado.
+    ```bash
+    npm install -g supabase
+    ```
+    *   **Se você receber "command not found":** Use `npx` antes de cada comando `supabase`. Exemplo: `npx supabase login`.
+
+2.  **Faça Login na sua Conta Supabase:**
+    ```bash
+    supabase login
+    ```
+    Este comando pedirá para você gerar um "Access Token" no site do Supabase (ele abrirá uma página no navegador) e colá-lo de volta no terminal.
+
+3.  **Vincule seu Projeto Local:** Navegue no terminal até a pasta raiz do seu projeto (`E:\Projetos\BrunaControledeestoque\Cópiadesegurança\ControleApp_V3_Design_xml2_Copia (8)final_Copia`). Substitua `edaednirrvsuvilnopbt` pelo ID do seu projeto Supabase.
+    ```bash
+    supabase link --project-ref edaednirrvsuvilnopbt
+    ```
+    Isso criará uma pasta `supabase` na raiz do seu projeto.
+
+4.  **Crie a Nova Função:** Agora, execute o comando para criar a estrutura da nossa nova função.
+    ```bash
+    supabase functions new create-user
+    ```
+    Isso criará uma pasta e um arquivo em: `supabase/functions/create-user/index.ts`.
+
+---
+
+### **Passo 2: Adicionar o Código da Edge Function (TypeScript)**
+
+1.  Abra o arquivo `supabase/functions/create-user/index.ts` que acabou de ser criado.
+2.  **Substitua todo o conteúdo** deste arquivo pelo código TypeScript abaixo:
+
+    ```typescript
+    import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    import { corsHeaders } from '../_shared/cors.ts';
+
+    // Esta função cria um usuário no Supabase Auth e define seu perfil na tabela 'profiles'.
+    // Apenas administradores podem chamar esta função.
+
+    serve(async (req) => {
+      // Lida com requisições OPTIONS para CORS
+      if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders });
+      }
+
+      try {
+        const { email, password, role } = await req.json();
+
+        // Crie um cliente Supabase com a chave de service_role
+        // Isso permite que a função ignore as políticas de RLS e atue como um administrador.
+        const supabaseAdmin = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+
+        // --- VERIFICAÇÃO DE SEGURANÇA: APENAS ADMIN PODE CRIAR USUÁRIOS ---
+        // Obtenha o token de autorização do cabeçalho da requisição
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+          return new Response(JSON.stringify({ error: 'Authorization header missing' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 401,
+          });
+        }
+
+        const token = authHeader.replace('Bearer ', '');
+        const { data: userAuth, error: userAuthError } = await supabaseAdmin.auth.getUser(token);
+
+        if (userAuthError || !userAuth.user) {
+          return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 401,
+          });
+        }
+
+        // Verifique o cargo do usuário logado
+        const { data: userProfile, error: profileError } = await supabaseAdmin
+          .from('profiles')
+          .select('role')
+          .eq('id', userAuth.user.id)
+          .single();
+
+        if (profileError || userProfile.role !== 'admin') {
+          return new Response(JSON.stringify({ error: 'Permission denied: Only administrators can create users.' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 403,
+          });
+        }
+        // --- FIM DA VERIFICAÇÃO DE SEGURANÇA ---
+
+
+        // 1. Crie o usuário no sistema de autenticação do Supabase
+        const { data: newUserAuth, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true, // Confirma o e-mail automaticamente
+          user_metadata: { role }, // Define o cargo nos metadados do usuário
+        });
+
+        if (createUserError) {
+          return new Response(JSON.stringify({ error: createUserError.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          });
+        }
+
+        // 2. Atualize o perfil do usuário na tabela 'profiles'
+        // O trigger 'on_auth_user_created' já criou a linha. Apenas atualizamos o role.
+        const { data: updatedProfile, error: updateProfileError } = await supabaseAdmin
+          .from('profiles')
+          .update({ role })
+          .eq('id', newUserAuth.user.id)
+          .select()
+          .single();
+
+        if (updateProfileError) {
+          // Se a atualização do perfil falhar, tente deletar o usuário da autenticação para evitar inconsistência
+          await supabaseAdmin.auth.admin.deleteUser(newUserAuth.user.id);
+          return new Response(JSON.stringify({ error: updateProfileError.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500,
+          });
+        }
+
+        return new Response(JSON.stringify(updatedProfile), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        });
+      }
+    });
+
+    ```
+
+---
+
+### **Passo 3: Criar o Arquivo `_shared/cors.ts`**
+
+A função acima importa `corsHeaders` de `../_shared/cors.ts`. Você precisará criar este arquivo.
+
+1.  Crie o arquivo `supabase/functions/_shared/cors.ts`.
+2.  Cole o seguinte conteúdo dentro deste novo arquivo:
+
+    ```typescript
+    export const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    }
+    ```
+
+---
+
+### **Passo 4: Configurar a Variável de Ambiente Secreta**
+
+Sua Edge Function precisa da sua chave `service_role` para funcionar.
+
+1.  Vá para o seu painel do Supabase.
+2.  No menu da esquerda, clique em **Edge Functions**.
+3.  Clique na sua função `create-user` (ou selecione-a se já estiver na página de Functions).
+4.  Vá para a aba **Secrets**.
+5.  Adicione um novo segredo (New Secret) com o nome exato: `SUPABASE_SERVICE_ROLE_KEY`.
+6.  No campo "Value", cole o valor da sua chave `service_role` (aquela que você não deve compartilhar, encontrada em **Settings -> API**).
+
+---
+
+### **Passo 5: Fazer o Deploy da Função**
+
+No seu terminal, na raiz do projeto, execute o comando para implantar a nova função no Supabase:
+
+```bash
+supabase functions deploy create-user --no-verify-jwt # Use --no-verify-jwt para Chamadas do navegador
+```
+
+---
+
+Após seguir todos estes passos e a função ser implantada com sucesso, me avise para que eu eu possa lhe dar as instruções para a última modificação no frontend.

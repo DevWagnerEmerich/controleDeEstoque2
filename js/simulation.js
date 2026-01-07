@@ -1,7 +1,8 @@
 import { openModal, closeModal, showNotification, showConfirmModal } from './ui.js';
-import { items, suppliers, saveData, operationsHistory, pendingSimulations, movements, pendingPurchaseOrders } from './database.js';
+import { items, suppliers, operationsHistory, pendingSimulations, movements, pendingPurchaseOrders, addPurchaseOrder, addItem } from './database.js';
 import { finalizarOperacaoDeImportacao } from './operations.js';
 import { openOperationsHistoryModal } from './ui.js';
+import { getCurrentUserProfile } from './auth.js';
 
 const AUTO_SAVE_KEY = 'stock_simulation_draft';
 let currentSimulation = {};
@@ -277,8 +278,14 @@ export function openSimAddItemModal() {
     openModal('sim-add-item-modal');
 }
 
-function saveSimItem(event) {
+async function saveSimItem(event) {
     event.preventDefault();
+
+    const currentUser = getCurrentUserProfile();
+    if (!currentUser) {
+        showNotification('Usuário não autenticado. Não é possível salvar o item.', 'danger');
+        return;
+    }
 
     // Captura todos os valores do formulário
     const name = document.getElementById('simItemName').value;
@@ -304,19 +311,18 @@ function saveSimItem(event) {
     for (const rule of validationChecks) {
         if (!rule.check) {
             showNotification(rule.message, 'warning');
-            return; // Para no primeiro erro de validação
+            return;
         }
     }
 
-    // VERIFICA SE O ITEM JÁ EXISTE NO ESTOQUE PRINCIPAL
     const alreadyExists = items.some(item => item.code === code && item.supplierId === supplierId);
     if (alreadyExists) {
         showNotification('Um item com este Código/SKU e Fornecedor já existe no estoque.', 'danger');
         return;
     }
 
-    const newItem = {
-        id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    const newItemData = {
+        user_id: currentUser.id,
         name: name,
         nameEn: nameEn,
         code: code,
@@ -325,7 +331,7 @@ function saveSimItem(event) {
         costPrice: costPrice,
         salePrice: costPrice * 1.25,
         supplierId: supplierId,
-        quantity: 0, // Itens novos entram com estoque 0
+        quantity: 0,
         minQuantity: 0,
         unitsPerPackage: unitsPerPackage,
         packageType: unitsPerPackage > 1 ? 'caixa' : 'unidade',
@@ -336,15 +342,18 @@ function saveSimItem(event) {
         updatedAt: new Date().toISOString()
     };
 
-    // Adiciona o item diretamente ao estoque principal
-    items.push(newItem);
-    saveData(); // Persiste a alteração imediatamente
+    try {
+        const addedItem = await addItem(newItemData);
+        items.push(addedItem);
+        showNotification(`Novo item "${name}" foi adicionado ao estoque!`, 'success');
+    } catch (error) {
+        showNotification(`Erro ao salvar novo item: ${error.message}`, 'danger');
+        console.error("Erro ao salvar novo item:", error);
+        return;
+    }
 
-    showNotification(`Novo item "${name}" foi adicionado ao estoque!`, 'success');
     closeModal('sim-add-item-modal');
     document.getElementById('sim-item-form').reset();
-    
-    // Atualiza a lista de itens disponíveis na simulação para que o novo item apareça
     renderSimulationAvailableItems();
 }
 
@@ -392,7 +401,8 @@ export function saveSimulationAsDraft() {
 
     currentSimulation.status = 'pending';
     pendingSimulations.push(currentSimulation);
-    saveData();
+    // TODO: Salvar o rascunho da simulação no Supabase
+    // saveData();
     clearAutoSave();
     closeModal('simulation-modal');
     showNotification(`Simulação ${currentSimulation.id} salva como rascunho.`, 'success');
@@ -401,33 +411,39 @@ export function saveSimulationAsDraft() {
     // openOperationsHistoryModal();
 }
 
-export function createPurchaseOrder() {
+export async function createPurchaseOrder() {
     if (!currentSimulation || !currentSimulation.items || currentSimulation.items.length === 0) {
         showNotification('Adicione itens à simulação antes de criar uma Ordem de Compra.', 'warning');
         return;
     }
 
-    // 1. Cria a Ordem de Compra no histórico de operações
+    const currentUser = getCurrentUserProfile();
+    if (!currentUser) {
+        showNotification('Usuário não autenticado. Não é possível criar a Ordem de Compra.', 'danger');
+        return;
+    }
+
     const newPurchaseOrder = {
-        id: currentSimulation.id.replace('SIM', 'OC'), // Troca o prefixo para Ordem de Compra
+        id: currentSimulation.id.replace('SIM', 'OC'),
+        user_id: currentUser.id,
         date: new Date().toISOString(),
         items: currentSimulation.items,
         type: 'purchase_order',
-        status: 'pending_xml' // Status inicial
+        status: 'pending_xml'
     };
-    pendingPurchaseOrders.push(newPurchaseOrder);
 
-    // 2. Não há movimento de estoque nesta fase. O estoque só será atualizado na Fase 4.
+    try {
+        const addedPO = await addPurchaseOrder(newPurchaseOrder);
+        pendingPurchaseOrders.push(addedPO);
+        showNotification(`Ordem de Compra ${addedPO.id} criada com sucesso!`, 'success');
+    } catch (error) {
+        showNotification(`Erro ao criar Ordem de Compra: ${error.message}`, 'danger');
+        console.error("Erro ao criar Ordem de Compra:", error);
+        return;
+    }
 
-    // 3. Salva os dados, limpa o rascunho automático e fecha o modal
-    saveData();
     clearAutoSave();
     closeModal('simulation-modal');
-    showNotification(`Ordem de Compra ${newPurchaseOrder.id} criada com sucesso! Status: Aguardando XML.`, 'success');
-    
-    // Futuramente, podemos redirecionar para a nova tela de Ordens de Compra
-    // openPurchaseOrdersScreen(); 
-    
     toggleSimulationActionButtons(false);
 }
 

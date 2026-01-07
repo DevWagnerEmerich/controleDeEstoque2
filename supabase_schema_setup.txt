@@ -1,0 +1,64 @@
+-- 1. CRIA A TABELA DE OPERAÇÕES
+CREATE TABLE IF NOT EXISTS public.operations (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    "invoiceNumber" TEXT,
+    date TIMESTAMPTZ,
+    type TEXT,
+    items JSONB,
+    "nfeData" JSONB,
+    "exporterInfo" TEXT,
+    "importerInfo" TEXT,
+    booking TEXT,
+    "paymentTerm" TEXT,
+    "portOfDeparture" TEXT,
+    "destinationPort" TEXT,
+    incoterm TEXT,
+    "footerInfo" TEXT,
+    "ptaxRate" NUMERIC,
+    costs JSONB,
+    "manualNetWeight" NUMERIC,
+    "manualGrossWeight" NUMERIC,
+    distribution JSONB,
+    suppliers JSONB
+);
+
+-- 2. CRIA A TABELA DE MOVIMENTAÇÕES DE ESTOQUE
+CREATE TABLE IF NOT EXISTS public.movements (
+    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    item_id UUID REFERENCES public.items(id) ON DELETE CASCADE,
+    operation_id TEXT REFERENCES public.operations(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    quantity INT NOT NULL,
+    price NUMERIC,
+    reason TEXT,
+    date TIMESTAMPTZ
+);
+
+-- 3. HABILITA A SEGURANÇA (ROW LEVEL SECURITY)
+ALTER TABLE public.operations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.movements ENABLE ROW LEVEL SECURITY;
+
+-- 4. CRIA AS POLÍTICAS DE ACESSO
+-- Para 'operations': Usuários só podem ver e gerenciar suas próprias operações.
+DROP POLICY IF EXISTS "Usuários podem gerenciar suas próprias operações" ON public.operations;
+CREATE POLICY "Usuários podem gerenciar suas próprias operações"
+ON public.operations FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- Para 'movements': Usuários podem ver movimentações de operações que eles criaram.
+DROP POLICY IF EXISTS "Usuários podem ver suas próprias movimentações" ON public.movements;
+CREATE POLICY "Usuários podem ver suas próprias movimentações"
+ON public.movements FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.operations
+    WHERE operations.id = movements.operation_id AND operations.user_id = auth.uid()
+  )
+);
+-- Permite que o código insira novas movimentações (a segurança é validada pela operação pai).
+CREATE POLICY "Usuários podem inserir movimentações" ON public.movements FOR INSERT WITH CHECK (true);

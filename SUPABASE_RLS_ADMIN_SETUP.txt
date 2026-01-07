@@ -1,0 +1,101 @@
+-- Comandos SQL para Configuração de RLS (Row Level Security) e Acesso Admin no Supabase
+
+-- Execute estes blocos de código no SQL Editor do seu painel Supabase, um de cada vez, clicando em "RUN" após cada bloco.
+
+-- Parte 1: Criação da Tabela `profiles` e Função `handle_new_user`
+-- (Execute este bloco primeiro)
+CREATE TABLE public.profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
+  role text DEFAULT 'user'
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own profile" ON public.profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, role)
+  VALUES (new.id, 'user');
+  RETURN new;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- Parte 2: Inserção Manual da Role 'admin' para Usuário Existente
+-- (Execute este bloco APENAS SE SEU USUÁRIO JÁ EXISTIA ANTES DA CRIAÇÃO DA TABELA 'profiles')
+-- Substitua '[SEU_USER_ID_AQUI]' pelo UUID do seu usuário.
+-- Você pode encontrar o User ID em Authentication -> Users no painel do Supabase.
+-- Exemplo: INSERT INTO public.profiles (id, role) VALUES ('a1b2c3d4-e5f6-7890-1234-567890abcdef', 'admin');
+-- Se você já inseriu manualmente via Table Editor, não precisa executar este comando.
+-- INSERT INTO public.profiles (id, role) VALUES ('[SEU_USER_ID_AQUI]', 'admin');
+
+
+-- Parte 3: Criar Função `get_my_role()` e Atualizar Políticas de RLS
+-- (Execute este bloco após a Parte 1 e 2)
+
+-- 3.1 Crie a função `get_my_role()`
+CREATE OR REPLACE FUNCTION get_my_role()
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN (
+    SELECT role
+    FROM public.profiles
+    WHERE id = auth.uid()
+  );
+END;
+$$;
+
+-- 3.2 Atualizar políticas da tabela `suppliers`
+DROP POLICY "Enable read access for all users" ON public.suppliers;
+DROP POLICY "Enable insert for authenticated users only" ON public.suppliers;
+DROP POLICY "Enable update for users based on user_id" ON public.suppliers;
+DROP POLICY "Enable delete for users based on user_id" ON public.suppliers;
+
+CREATE POLICY "Enable access to all for admins, and to own for users" ON public.suppliers
+  FOR ALL -- 'ALL' cobre SELECT, INSERT, UPDATE, DELETE
+  USING (auth.uid() = user_id OR get_my_role() = 'admin')
+  WITH CHECK (auth.uid() = user_id OR get_my_role() = 'admin');
+
+-- 3.3 Atualizar políticas da tabela `items`
+DROP POLICY "Enable read access for users based on user_id" ON public.items;
+DROP POLICY "Enable insert for users based on user_id" ON public.items;
+DROP POLICY "Enable update for users based on user_id" ON public.items;
+DROP POLICY "Enable delete for users based on user_id" ON public.items;
+
+CREATE POLICY "Enable access to all for admins, and to own for users" ON public.items
+  FOR ALL
+  USING (auth.uid() = user_id OR get_my_role() = 'admin')
+  WITH CHECK (auth.uid() = user_id OR get_my_role() = 'admin');
+
+-- 3.4 Atualizar políticas da tabela `operations`
+DROP POLICY "Enable read access for users based on user_id" ON public.operations;
+DROP POLICY "Enable insert for users based on user_id" ON public.operations;
+DROP POLICY "Enable update for users based on user_id" ON public.operations;
+DROP POLICY "Enable delete for users based on user_id" ON public.operations;
+
+CREATE POLICY "Enable access to all for admins, and to own for users" ON public.operations
+  FOR ALL
+  USING (auth.uid() = user_id OR get_my_role() = 'admin')
+  WITH CHECK (auth.uid() = user_id OR get_my_role() = 'admin');
+
+-- 3.5 Atualizar políticas da tabela `movements`
+DROP POLICY "Enable read access for users based on user_id" ON public.movements;
+DROP POLICY "Enable insert for users based on user_id" ON public.movements;
+DROP POLICY "Enable update for users based on user_id" ON public.movements;
+DROP POLICY "Enable delete for users based on user_id" ON public.movements;
+
+CREATE POLICY "Enable access to all for admins, and to own for users" ON public.movements
+  FOR ALL
+  USING (auth.uid() = user_id OR get_my_role() = 'admin')
+  WITH CHECK (auth.uid() = user_id OR get_my_role() = 'admin');
