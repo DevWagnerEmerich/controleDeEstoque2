@@ -5,11 +5,12 @@ import {
 import { openReportsModal } from './reports.js';
 import { finalizarOperacaoDeImportacao, regenerateDocument } from './operations.js';
 import {
-    applyPermissionsToUI, fullUpdate, showView, showNotification, openModal, closeModal, openOperationsHistoryModal
+    applyPermissionsToUI, fullUpdate, showView, showNotification, openModal, closeModal, openOperationsHistoryModal, showConfirmModal
 } from './ui.js';
 import { initializeEventListeners } from './events.js';
 import { openSimulationModal, resumeSimulation } from './simulation.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
+import { exportBackup, restoreBackup } from './backup.js'; // Import Backup functionality
 import { escapeHTML } from './utils/helpers.js';
 import { API_CONFIG } from './config.js'; // Import config
 
@@ -131,6 +132,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Inicializa todos os outros event listeners da aplicação
     initializeEventListeners();
+
+    // --- Backup & Restore Events ---
+    const backupBtn = document.getElementById('desktop-backup-btn');
+    if (backupBtn) {
+        backupBtn.addEventListener('click', () => {
+            openModal('backup-modal');
+        });
+    }
+
+    const doBackupBtn = document.getElementById('btn-do-backup');
+    if (doBackupBtn) {
+        doBackupBtn.addEventListener('click', async () => {
+            doBackupBtn.disabled = true;
+            doBackupBtn.textContent = "Gerando Backup...";
+            await exportBackup();
+            doBackupBtn.disabled = false;
+            doBackupBtn.textContent = "Baixar Backup Agora";
+        });
+    }
+
+    const triggerRestoreBtn = document.getElementById('btn-trigger-restore');
+    const backupInput = document.getElementById('backup-file-input');
+
+    if (triggerRestoreBtn && backupInput) {
+        triggerRestoreBtn.addEventListener('click', () => {
+            backupInput.click();
+        });
+
+        backupInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            backupInput.value = ''; // Reset input immediately
+            if (!file) return;
+
+            showConfirmModal(
+                "Restaurar Backup?",
+                "ATENÇÃO: Restaurar um backup irá sobrescrever dados existentes com o mesmo ID.\nPode haver perda de dados recentes se o backup for antigo.\n\nTem certeza que deseja continuar?",
+                async () => {
+                    triggerRestoreBtn.disabled = true;
+                    triggerRestoreBtn.textContent = "Restaurando...";
+
+                    try {
+                        await restoreBackup(file);
+                        closeModal('backup-modal');
+                    } catch (err) {
+                        // Error handled in restoreBackup
+                    } finally {
+                        triggerRestoreBtn.disabled = false;
+                        triggerRestoreBtn.textContent = "Selecionar Arquivo...";
+                    }
+                }
+            );
+        });
+    }
 
     // Listener de Navegação Principal (Bottom Nav - Mobile)
     document.querySelector('.bottom-nav').addEventListener('click', (e) => {

@@ -90,6 +90,9 @@
                         <button id="desktop-users-btn" class="nav-action-button" aria-label="Utilizadores">
                             <i data-feather="users" aria-hidden="true"></i>
                         </button>
+                        <button id="desktop-backup-btn" class="nav-action-button" aria-label="Backup e Restauração">
+                            <i data-feather="database" aria-hidden="true"></i>
+                        </button>
                     </div>
                     <div class="nav-user">
                         <span id="desktop-username"></span>
@@ -694,6 +697,35 @@
                 <button type="submit" class="btn btn-primary">Confirmar Entrada</button>
             </div>
         </form>
+    </div>
+
+    <!-- Backup Modal -->
+    <div id="backup-modal" class="modal-backdrop">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Backup & Restauração</h2>
+                <button type="button" class="close-btn closeModalBtn"><i data-feather="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="hub-card" style="margin-bottom: 1rem;">
+                    <i data-feather="download-cloud" class="hub-icon"></i>
+                    <h3>Fazer Backup</h3>
+                    <p>Baixe uma cópia completa dos seus dados (JSON).</p>
+                    <button id="btn-do-backup" class="btn btn-primary" style="width: 100%;">Baixar Backup Agora</button>
+                </div>
+                
+                <hr style="margin: 1.5rem 0; border-color: var(--border-color);">
+
+                <div class="hub-card">
+                    <i data-feather="upload-cloud" class="hub-icon" style="color: #EF4444;"></i> <!-- Red color for caution -->
+                    <h3>Restaurar Backup</h3>
+                    <p>Importe um arquivo de backup para recuperar dados.<br><strong style="color: #EF4444;">Atenção: Isso sobrescreve dados existentes!</strong></p>
+                    
+                    <input type="file" id="backup-file-input" accept=".json" class="hidden">
+                    <button id="btn-trigger-restore" class="btn btn-secondary" style="width: 100%;">Selecionar Arquivo...</button>
+                </div>
+            </div>
+        </div>
     </div>
     <div id="notification-container" class="fixed bottom-24 md:bottom-5 right-5 z-50 space-y-3"></div>
     <div id="unit-confirm-modal" class="modal-backdrop">
