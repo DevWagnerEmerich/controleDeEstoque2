@@ -299,8 +299,9 @@ function showExtractionMenu(data) {
     stagedItems.push(...data.produtos);
 
     const summaryEl = document.getElementById('extraction-summary');
+    // Security Fix: Sanitize input to prevent XSS
     summaryEl.innerHTML = `
-        <p><strong>Fornecedor:</strong> ${data.fornecedor?.nome || 'N/A'}</p>
+        <p><strong>Fornecedor:</strong> ${escapeHTML(data.fornecedor?.nome || 'N/A')}</p>
         <p><strong>Itens nesta nota:</strong> ${data.produtos?.length || 0}</p>
         <p><strong>Total de itens acumulados:</strong> ${stagedItems.length}</p>
     `;

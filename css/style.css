@@ -11,46 +11,59 @@
   - Branco para cards
 */
 :root {
-  --color-primary: #FACC15; /* Amarelo Vibrante (amber-400) */
-  --color-primary-hover: #FBBF24; /* Amarelo um pouco mais claro (amber-300) */
-  
-  --color-dark: #1F2937;      /* Cinza Carvão (gray-800) */
-  --color-dark-light: #374151; /* Cinza (gray-700) */
+    --color-primary: #FACC15;
+    /* Amarelo Vibrante (amber-400) */
+    --color-primary-hover: #FBBF24;
+    /* Amarelo um pouco mais claro (amber-300) */
 
-  --color-background: #F9FAFB; /* Cinza Muito Claro (gray-50) */
-  --color-card: #FFFFFF;       /* Branco */
+    --color-dark: #1F2937;
+    /* Cinza Carvão (gray-800) */
+    --color-dark-light: #374151;
+    /* Cinza (gray-700) */
 
-  --text-primary: #1F2937;   /* Cinza Carvão (gray-800) */
-  --text-secondary: #6B7280; /* Cinza Médio (gray-500) */
-  --text-on-dark: #F9FAFB;   /* Texto para fundos escuros */
+    --color-background: #F9FAFB;
+    /* Cinza Muito Claro (gray-50) */
+    --color-card: #FFFFFF;
+    /* Branco */
 
-  --border-color: #E5E7EB; /* Cinza Claro para bordas (gray-200) */
-  
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --text-primary: #1F2937;
+    /* Cinza Carvão (gray-800) */
+    --text-secondary: #6B7280;
+    /* Cinza Médio (gray-500) */
+    --text-on-dark: #F9FAFB;
+    /* Texto para fundos escuros */
 
-  --border-radius-sm: 0.375rem; /* 6px */
-  --border-radius-md: 0.5rem;   /* 8px */
-  --border-radius-lg: 0.75rem;  /* 12px */
+    --border-color: #E5E7EB;
+    /* Cinza Claro para bordas (gray-200) */
+
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+    --border-radius-sm: 0.375rem;
+    /* 6px */
+    --border-radius-md: 0.5rem;
+    /* 8px */
+    --border-radius-lg: 0.75rem;
+    /* 12px */
 }
 
 /* Reset Básico e Estilos Globais */
 *,
 *::before,
 *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-  background-color: var(--color-background);
-  font-family: 'Poppins', sans-serif;
-  color: var(--text-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  box-shadow: inset 8px 0 15px -10px rgba(0,0,0,0.1), inset -8px 0 15px -10px rgba(0,0,0,0.1);
+    background-color: var(--color-background);
+    font-family: 'Poppins', sans-serif;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    box-shadow: inset 8px 0 15px -10px rgba(0, 0, 0, 0.1), inset -8px 0 15px -10px rgba(0, 0, 0, 0.1);
 }
 
 .hidden {
@@ -63,7 +76,8 @@ body.modal-is-open {
 }
 
 /* Estilos Globais para Formulários */
-.form-input, .form-select {
+.form-input,
+.form-select {
     width: 100%;
     padding: 0.625rem 0.75rem;
     border: 1px solid var(--border-color, #E5E7EB);
@@ -79,7 +93,8 @@ body.modal-is-open {
     color: var(--text-secondary, #6B7280);
 }
 
-.form-input:focus, .form-select:focus {
+.form-input:focus,
+.form-select:focus {
     outline: none;
     border-color: var(--color-primary, #FACC15);
     box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.3);
@@ -88,18 +103,23 @@ body.modal-is-open {
 
 /* Estilização da Barra de Rolagem */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+    width: 8px;
+    height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: var(--color-background);
+    background: var(--color-background);
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db; /* Cinza (gray-300) */
-  border-radius: 10px;
+    background: #d1d5db;
+    /* Cinza (gray-300) */
+    border-radius: 10px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af; /* Cinza (gray-400) */
+    background: #9ca3af;
+    /* Cinza (gray-400) */
 }
 
 /* Layout Principal */
@@ -117,8 +137,14 @@ body.modal-is-open {
 /* ETAPA 2: NAVEGAÇÃO RESPONSIVA */
 
 /* Estilos Padrão (Mobile-First) */
-.desktop-only { display: none; }
-.mobile-only { display: flex; /* ou block, dependendo do elemento */ }
+.desktop-only {
+    display: none;
+}
+
+.mobile-only {
+    display: flex;
+    /* ou block, dependendo do elemento */
+}
 
 .mobile-header {
     background-color: var(--color-background);
@@ -161,7 +187,8 @@ body.modal-is-open {
 }
 
 .bottom-nav {
-    display: none; /* Barra de navegação inferior removida a pedido */
+    display: none;
+    /* Barra de navegação inferior removida a pedido */
 }
 
 .nav-item {
@@ -194,11 +221,18 @@ body.modal-is-open {
 
 /* Estilos Desktop (Tela Larga) */
 @media (min-width: 768px) {
-    .desktop-only { display: flex; /* ou block */ }
-    .mobile-only { display: none; }
+    .desktop-only {
+        display: flex;
+        /* ou block */
+    }
+
+    .mobile-only {
+        display: none;
+    }
 
     #main-content {
-        padding-top: 64px; /* Altura da barra de navegação desktop */
+        padding-top: 64px;
+        /* Altura da barra de navegação desktop */
         padding-bottom: 0;
     }
 
@@ -213,7 +247,8 @@ body.modal-is-open {
         right: 0;
         z-index: 100;
         box-shadow: var(--shadow-md);
-        display: flex; /* Garantir que seja flex */
+        display: flex;
+        /* Garantir que seja flex */
         justify-content: center;
     }
 
@@ -227,7 +262,12 @@ body.modal-is-open {
         justify-content: space-between;
     }
 
-    .nav-left, .nav-right, .nav-logo, .nav-links, .nav-actions, .nav-user {
+    .nav-left,
+    .nav-right,
+    .nav-logo,
+    .nav-links,
+    .nav-actions,
+    .nav-user {
         display: flex;
         align-items: center;
         gap: 1.5rem;
@@ -239,7 +279,9 @@ body.modal-is-open {
         gap: 0.75rem;
     }
 
-    .nav-logo i { color: var(--color-primary); }
+    .nav-logo i {
+        color: var(--color-primary);
+    }
 
     .nav-link {
         color: var(--text-on-dark);
@@ -251,7 +293,9 @@ body.modal-is-open {
         transition: all 0.2s ease-in-out;
     }
 
-    .nav-link:hover { color: var(--color-primary); }
+    .nav-link:hover {
+        color: var(--color-primary);
+    }
 
     .nav-link.active {
         color: var(--color-primary);
@@ -271,7 +315,10 @@ body.modal-is-open {
         transition: all 0.2s ease-in-out;
     }
 
-    .nav-action-button:hover { background-color: var(--color-dark-light); color: white; }
+    .nav-action-button:hover {
+        background-color: var(--color-dark-light);
+        color: white;
+    }
 
     .nav-action-button.primary {
         background-color: var(--color-primary);
@@ -282,11 +329,18 @@ body.modal-is-open {
         gap: 0.5rem;
     }
 
-    .nav-action-button.primary:hover { background-color: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+    .nav-action-button.primary:hover {
+        background-color: var(--color-primary-hover);
+        border-color: var(--color-primary-hover);
+    }
 
-    .nav-user { font-size: 0.9rem; }
+    .nav-user {
+        font-size: 0.9rem;
+    }
 
-    .nav-user #logout-btn { border: none; }
+    .nav-user #logout-btn {
+        border: none;
+    }
 }
 
 /* ETAPA 3: GRID DE PRODUTOS E CARDS */
@@ -412,13 +466,16 @@ body.modal-is-open {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 140px; /* Prevent overflow */
+    max-width: 140px;
+    /* Prevent overflow */
 }
 
 @media (max-width: 400px) {
     .items-grid {
-        grid-template-columns: 1fr; /* Full width on very small screens */
+        grid-template-columns: 1fr;
+        /* Full width on very small screens */
     }
+
     .card-info-row {
         font-size: 0.85rem;
     }
@@ -440,10 +497,25 @@ body.modal-is-open {
     text-transform: uppercase;
 }
 
-.status-ok { background-color: #DCFCE7; color: #166534; }
-.status-baixo { background-color: #FEF9C3; color: #854D0E; }
-.status-crítico { background-color: #FEE2E2; color: #991B1B; }
-.status-esgotado { background-color: #F1F5F9; color: #475569; }
+.status-ok {
+    background-color: #DCFCE7;
+    color: #166534;
+}
+
+.status-baixo {
+    background-color: #FEF9C3;
+    color: #854D0E;
+}
+
+.status-crítico {
+    background-color: #FEE2E2;
+    color: #991B1B;
+}
+
+.status-esgotado {
+    background-color: #F1F5F9;
+    color: #475569;
+}
 
 .add-stock-button {
     background-color: var(--color-primary);
@@ -462,25 +534,33 @@ body.modal-is-open {
 }
 
 .btn-success {
-  background-color: #4CAF50; /* A softer green */
-  color: white;
-  border: 1px solid #4CAF50;
-  border-radius: var(--border-radius-md); /* Use existing variable for consistency */
-  box-shadow: var(--shadow-sm); /* Use existing shadow variable */
-  transition: all 0.2s ease;
-  padding: 0.625rem 1rem; /* Consistent with form inputs */
-  font-weight: 600;
-  display: inline-flex; /* To align icon and text */
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem; /* Space between icon and text */
-  cursor: pointer;
+    background-color: #4CAF50;
+    /* A softer green */
+    color: white;
+    border: 1px solid #4CAF50;
+    border-radius: var(--border-radius-md);
+    /* Use existing variable for consistency */
+    box-shadow: var(--shadow-sm);
+    /* Use existing shadow variable */
+    transition: all 0.2s ease;
+    padding: 0.625rem 1rem;
+    /* Consistent with form inputs */
+    font-weight: 600;
+    display: inline-flex;
+    /* To align icon and text */
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    /* Space between icon and text */
+    cursor: pointer;
 }
 
 .btn-success:hover {
-  background-color: #45a049; /* Darker green on hover */
-  border-color: #45a049;
-  box-shadow: var(--shadow-md); /* Slightly more prominent shadow on hover */
+    background-color: #45a049;
+    /* Darker green on hover */
+    border-color: #45a049;
+    box-shadow: var(--shadow-md);
+    /* Slightly more prominent shadow on hover */
 }
 
 /* ETAPA 4: BARRA DE CONTROLES E FORMULÁRIOS */
@@ -492,7 +572,8 @@ body.modal-is-open {
     box-shadow: var(--shadow-sm);
     border: 1px solid var(--border-color);
     display: flex;
-    flex-direction: column; /* Mobile-first: column */
+    flex-direction: column;
+    /* Mobile-first: column */
     gap: 1rem;
 }
 
@@ -512,29 +593,36 @@ body.modal-is-open {
 
 /* Input with padding for icon */
 .search-wrapper .form-input {
-    padding-left: 3.5rem; /* Aumentado para evitar sobreposição com o ícone */
+    padding-left: 3.5rem;
+    /* Aumentado para evitar sobreposição com o ícone */
 }
 
 .filters-wrapper {
     display: flex;
-    flex-direction: column; /* Mobile-first: column */
+    flex-direction: column;
+    /* Mobile-first: column */
     gap: 1rem;
 }
 
 @media (min-width: 768px) {
     .controls-card {
-        flex-direction: row; /* Desktop: row */
+        flex-direction: row;
+        /* Desktop: row */
         align-items: center;
     }
 
     .search-wrapper {
-        flex-grow: 1; /* Allow search to grow */
-        max-width: 500px; /* But not indefinitely */
+        flex-grow: 1;
+        /* Allow search to grow */
+        max-width: 500px;
+        /* But not indefinitely */
     }
 
     .filters-wrapper {
-        flex-direction: row; /* Desktop: row */
-        flex-shrink: 0; /* Prevent filters from shrinking */
+        flex-direction: row;
+        /* Desktop: row */
+        flex-shrink: 0;
+        /* Prevent filters from shrinking */
     }
 }
 
@@ -692,18 +780,37 @@ body.modal-is-open {
 /* TAREFA 4: CORREÇÃO TELA DE LOGIN */
 
 @keyframes slideInFromLeft {
-    from { transform: translateX(-20px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
+    from {
+        transform: translateX(-20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
 
 @keyframes slideInFromRight {
-    from { transform: translateX(20px); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
+    from {
+        transform: translateX(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 #login-screen {
@@ -738,7 +845,8 @@ body.modal-is-open {
     max-width: 400px;
     width: 100%;
     animation: fadeIn 0.5s ease-out 0.3s;
-    animation-fill-mode: both; /* Mantém o estado final da animação */
+    animation-fill-mode: both;
+    /* Mantém o estado final da animação */
 }
 
 .login-logo {
@@ -843,10 +951,21 @@ body.modal-is-open {
     transform: translateX(0);
 }
 
-.notification.info { background-color: #3B82F6; }
-.notification.success { background-color: #22C55E; }
-.notification.warning { background-color: #F97316; }
-.notification.danger { background-color: #EF4444; }
+.notification.info {
+    background-color: #3B82F6;
+}
+
+.notification.success {
+    background-color: #22C55E;
+}
+
+.notification.warning {
+    background-color: #F97316;
+}
+
+.notification.danger {
+    background-color: #EF4444;
+}
 
 /* Simulation Modal Controls */
 .panel-controls {
@@ -887,6 +1006,7 @@ body.modal-is-open {
         align-items: center;
         justify-content: space-between;
     }
+
     .panel-actions {
         justify-content: flex-end;
     }
@@ -895,14 +1015,19 @@ body.modal-is-open {
 /* Simulation Actions Buttons */
 .sim-actions {
     display: flex;
-    gap: 0.5rem; /* Espaçamento entre os botões */
-    flex-wrap: wrap; /* Permite que os botões quebrem a linha em telas pequenas */
-    justify-content: flex-end; /* Alinha os botões à direita */
+    gap: 0.5rem;
+    /* Espaçamento entre os botões */
+    flex-wrap: wrap;
+    /* Permite que os botões quebrem a linha em telas pequenas */
+    justify-content: flex-end;
+    /* Alinha os botões à direita */
 }
 
 .sim-actions .btn {
-    flex-grow: 1; /* Permite que os botões cresçam para preencher o espaço */
-    min-width: 0; /* Garante que os botões possam encolher */
+    flex-grow: 1;
+    /* Permite que os botões cresçam para preencher o espaço */
+    min-width: 0;
+    /* Garante que os botões possam encolher */
 }
 
 /* Context Menu */
@@ -913,7 +1038,7 @@ body.modal-is-open {
     background-color: #fff;
     border: 1px solid #ccc;
     border-radius: 5px;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
     padding: 5px 0;
 }
 
@@ -934,8 +1059,10 @@ body.modal-is-open {
 
 @media (min-width: 768px) {
     .sim-actions .btn {
-        flex-grow: 0; /* Desativa o crescimento em telas maiores */
-        width: auto; /* Largura automática */
+        flex-grow: 0;
+        /* Desativa o crescimento em telas maiores */
+        width: auto;
+        /* Largura automática */
     }
 }
 
@@ -965,10 +1092,26 @@ body.modal-is-open {
     transform: translateX(0);
 }
 
-.notification.info { background-color: #3B82F6; } /* Blue */
-.notification.success { background-color: #22C55E; } /* Green */
-.notification.warning { background-color: #F97316; } /* Orange */
-.notification.danger { background-color: #EF4444; } /* Red */
+.notification.info {
+    background-color: #3B82F6;
+}
+
+/* Blue */
+.notification.success {
+    background-color: #22C55E;
+}
+
+/* Green */
+.notification.warning {
+    background-color: #F97316;
+}
+
+/* Orange */
+.notification.danger {
+    background-color: #EF4444;
+}
+
+/* Red */
 
 /* Purchase Orders */
 .po-item-card {
@@ -993,7 +1136,8 @@ body.modal-is-open {
     margin-bottom: 0.25rem;
 }
 
-.po-item-date, .po-item-status {
+.po-item-date,
+.po-item-status {
     font-size: 0.9rem;
     color: var(--text-secondary);
 }
@@ -1046,11 +1190,13 @@ body.modal-is-open {
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-lg);
     border: 1px solid var(--border-color);
-    width: 280px; /* Increased width */
+    width: 280px;
+    /* Increased width */
     z-index: 40;
     overflow: hidden;
     padding: 0.5rem;
-    display: block; /* Controlled by .hidden */
+    display: block;
+    /* Controlled by .hidden */
 }
 
 .dropdown-menu.hidden {
@@ -1069,23 +1215,28 @@ body.modal-is-open {
 }
 
 .dropdown-item:hover {
-    background-color: var(--color-dark-light); /* More noticeable background */
-    color: var(--text-on-dark); /* Light text for contrast */
+    background-color: var(--color-dark-light);
+    /* More noticeable background */
+    color: var(--text-on-dark);
+    /* Light text for contrast */
 }
 
-.dropdown-item:hover i { /* Change icon color on hover */
+.dropdown-item:hover i {
+    /* Change icon color on hover */
     color: var(--text-on-dark);
 }
 
 .dropdown-item i {
     width: 18px;
     height: 18px;
-    margin-right: 1rem; /* Increased margin */
+    margin-right: 1rem;
+    /* Increased margin */
     color: var(--text-secondary);
 }
 
 .dropdown-item span {
-    white-space: nowrap; /* Prevent line breaks */
+    white-space: nowrap;
+    /* Prevent line breaks */
 }
 
 /* Loading Overlay */
@@ -1120,6 +1271,122 @@ body.modal-is-open {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* ETAPA 5: UTILITÁRIOS (Missing Tailwind-like classes) */
+
+.text-red-500 {
+    color: #EF4444 !important;
+}
+
+.text-gray-300 {
+    color: #D1D5DB !important;
+}
+
+.text-gray-700 {
+    color: #374151 !important;
+}
+
+.text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+.bg-gray-50 {
+    background-color: #F9FAFB;
+}
+
+.mb-4 {
+    margin-bottom: 1rem;
+}
+
+.mb-6 {
+    margin-bottom: 1.5rem;
+}
+
+.py-16 {
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+}
+
+.p-4 {
+    padding: 1rem;
+}
+
+.p-2 {
+    padding: 0.5rem;
+}
+
+.text-sm {
+    font-size: 0.875rem;
+}
+
+.text-xl {
+    font-size: 1.25rem;
+}
+
+.text-5xl {
+    font-size: 3rem;
+}
+
+.font-semibold {
+    font-weight: 600;
+}
+
+.font-bold {
+    font-weight: 700;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.rounded-lg {
+    border-radius: var(--border-radius-md);
+}
+
+.border {
+    border: 1px solid var(--border-color);
+}
+
+.space-y-3>*+* {
+    margin-top: 0.75rem;
+}
+
+.top-5 {
+    top: 1.25rem;
+}
+
+.right-5 {
+    right: 1.25rem;
+}
+
+.fixed {
+    position: fixed;
+}
+
+.z-50 {
+    z-index: 50;
+}
+
+.bottom-5 {
+    bottom: 1.25rem;
+}
+
+.bottom-24 {
+    bottom: 6rem;
+}
+
+.md\:bottom-5 {}
+
+@media (min-width: 768px) {
+    .md\:bottom-5 {
+        bottom: 1.25rem;
+    }
 }

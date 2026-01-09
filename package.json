@@ -1,6 +1,6 @@
 {
   "name": "controle-de-estoque-app",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "App de Controle de Estoque com Backend Python",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
