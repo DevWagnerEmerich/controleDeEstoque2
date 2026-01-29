@@ -1,5 +1,6 @@
-import { updateOperation, updatePurchaseOrder } from './database.js';
+import { updateOperation, updatePurchaseOrder, updateItem, updateLocalItem } from './database.js';
 import { escapeHTML } from './utils/helpers.js';
+import { normalizeCnpj } from './ui.js';
 
 let nfeData = {}; // Global variable to hold the entire NFe data object
 let allItems = []; // Holds the main stock items for NCM lookup
@@ -226,7 +227,12 @@ function updatePreview() {
                 <tr>
                     <td class="text-center editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.qty">${qty.toLocaleString('en-US')}</td>
                     <td class="text-center editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.ncm">${ncm}</td>
-                    <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.desc">${descriptionHtml}</td>
+                    <td style="vertical-align: top;">
+                        <div class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.nameEn" style="min-height: 1.2em; display: block; margin-bottom: 4px;" placeholder="(Inglês)">${descEn}</div>
+                        <div style="font-size: 0.85em; color: #555; border-top: 1px dotted #ccc; padding-top: 2px;">
+                            <span class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.desc" style="display: block; min-height: 1em;">${descPt || '(Português)'}</span>
+                        </div>
+                    </td>
                     <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.qty_unit">${qty_unit}</td>
                     <td class="text-center editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.qty_kg">${formattedQtyKg}</td>
                     <td class="editable-field" data-target-id="suppliers.${groupIndex}.items.${itemIndex}.um">${um}</td>
@@ -452,6 +458,179 @@ async function saveChanges() {
 
     try {
         let savedData;
+
+        // --- SYNC BACK TO STOCK (New Feature) ---
+        // If items have item_id (UUID), check if we need to update the master stock record
+        if (invoiceData.suppliers) {
+            const syncPromises = [];
+
+            invoiceData.suppliers.forEach((supplier, supplierIndex) => {
+                const supplierId = supplier.id || (allItems.find(s => s.cnpj === supplier.cnpj) || {}).id; // Try to resolve supplier ID if missing
+
+                supplier.items.forEach((item, itemIndex) => {
+                    let stockItem;
+
+                    // 1. Try UUID (Strong Link)
+                    if (item.item_id) {
+                        stockItem = allItems.find(i => i.id === item.item_id);
+                    }
+
+                    // 2. Fallback: Code + Supplier (Legacy Link)
+                    if (!stockItem && item.code && supplierId) {
+                        stockItem = allItems.find(i => i.code === item.code && i.supplier_id === supplierId);
+                    }
+
+                    // 3. FALLBACK "ULTIMATE": Description Match (Robust)
+                    if (!stockItem && item.desc) {
+                        const targetDesc = item.desc.replace(/\s+/g, ' ').trim().toLowerCase();
+
+                        // Try to find by description AND supplier (if known)
+                        if (supplierId) {
+                            stockItem = allItems.find(i => {
+                                const iName = (i.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                                // if (iName.includes('vilma')) console.log(`   ? "${iName}" === "${targetDesc}"`);
+                                return i.supplier_id === supplierId && iName === targetDesc;
+                            });
+                        }
+
+                        // If still not found, try GLOBAL description match (careful, but better than nothing for update)
+                        if (!stockItem) {
+                            stockItem = allItems.find(i =>
+                                (i.name || '').replace(/\s+/g, ' ').trim().toLowerCase() === targetDesc
+                            );
+                        }
+
+                        if (stockItem) {
+                            console.log(`[SYNC] Item linkado por Nome: "${item.desc}" -> ID: ${stockItem.id}`);
+                            item.item_id = stockItem.id; // Save the link for future!
+                        }
+                    }
+
+                    // 4. FALLBACK "HAIL MARY": Position/Index Match via nfeData
+                    // If everything else fails, assume the order in the invoice matches the order in ID-rich nfeData.
+                    if (!stockItem) {
+                        const docData = JSON.parse(localStorage.getItem('currentDocument') || '{}');
+                        // We need to find the NFE group corresponding to this supplier index
+                        // Note: operation.nfeData might not match invoiceData.suppliers 1:1 if suppliers were merged/deleted.
+                        // BUT, usually they map 1:1 in order.
+                        if (docData.operation && docData.operation.nfeData && docData.operation.nfeData[supplierIndex]) {
+                            const originalNfeGroup = docData.operation.nfeData[supplierIndex];
+                            // Check if the item exists at the same index
+                            if (originalNfeGroup && originalNfeGroup.produtos && originalNfeGroup.produtos[itemIndex]) {
+                                const originalItem = originalNfeGroup.produtos[itemIndex];
+                                const originalCode = originalItem.code; // This comes from XML!
+
+                                // Now try to find functionality by Code (that we just recovered!)
+                                if (originalCode && supplierId) {
+                                    stockItem = allItems.find(i => i.code === originalCode && i.supplier_id === supplierId);
+                                    if (stockItem) {
+                                        console.log(`[SYNC-INDEX] MATCH FOUND via Index [${supplierIndex}][${itemIndex}]! code: ${originalCode}, ID: ${stockItem.id}`);
+                                        item.item_id = stockItem.id;
+                                        item.code = originalCode; // Restore the code in the invoice item too
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. FALLBACK "HAIL MARY": Position/Index Match via nfeData
+                    // If everything else fails, assume the order in the invoice matches the order in ID-rich nfeData.
+                    if (!stockItem && invoiceData.nfeData) { // Check global or operation nfeData
+                        // We need valid nfeData access here. 
+                        // In saveChanges context, 'invoiceData' is what we are saving (updatedOperationData in main flow context usually has nfeData mixed in)
+                        // But 'nfeData' global might be available or we check 'documentData' from localStorage if needed.
+                        // Let's use the global 'nfeData' populated in initialize() if possible, or try to find it.
+
+                        if (!nfeData || !nfeData.notaFiscal) {
+                            // Try to reload nfeData from localStorage if missing in current context
+                            const docData = JSON.parse(localStorage.getItem('currentDocument') || '{}');
+                            if (docData.operation && docData.operation.nfeData) {
+                                // Rebuilding flat list map? No, just match by Supplier Index.
+                            }
+                        }
+
+                        // Complex logic: We are inside suppliers.forEach (supplier) -> items.forEach (item)
+                        // We need the index of 'supplier' in 'invoiceData.suppliers' and index of 'item' in 'supplier.items'
+                        // But forEach callback doesn't give us the index easily unless we change the loop signature.
+                        // Wait, forEach(item, index) IS available.
+                        // I need to change lines 465 and 468 to capture indices.
+                    }
+
+                    if (stockItem) {
+                        let needsUpdate = false;
+                        const updatePayload = {};
+
+                        // --- SYNC FEATURE: PULL FROM STOCK ---
+                        // If Invoice English Name is empty, but Stock has one, pull it!
+                        if (!item.nameEn && (stockItem.name_en || stockItem.nameEn)) {
+                            item.nameEn = stockItem.name_en || stockItem.nameEn;
+                            console.log(`[SYNC] Pulling English Name from Stock: "${item.nameEn}"`);
+
+                            // UI REFRESH: Immediately update the DOM element so the user sees it without reload
+                            // We need to construct the data-target-id based on indices.
+                            // But wait, indentation means we don't have scope of Loop Index here directly in this block?
+                            // Ah, we added supplierIndex and itemIndex to the loops in step 605!
+                            // So we just need to verify we can use them to find the element.
+                            const domId = `suppliers.${supplierIndex}.items.${itemIndex}.nameEn`;
+                            const domEl = document.querySelector(`[data-target-id="${domId}"]`);
+                            if (domEl) {
+                                domEl.innerText = item.nameEn;
+                                domEl.classList.add('flash-update'); // Optional visual cue
+                            }
+                        }
+
+                        // Check Name in English
+                        const currentNameEn = stockItem.name_en || stockItem.nameEn || '';
+                        const newNameEn = item.nameEn || '';
+
+                        console.log(`[DEBUG] Comparando Inglês para ${stockItem.name}:`);
+                        console.log(`   - Atual no Banco: "${currentNameEn}"`);
+                        console.log(`   - Novo na Invoice: "${newNameEn}"`);
+
+                        if (newNameEn && newNameEn !== currentNameEn) {
+                            updatePayload.name_en = newNameEn; // Standardize on snake_case for DB
+                            needsUpdate = true;
+                            console.log(`   -> DIFERENÇA DETECTADA! name_en será atualizado.`);
+                        } else {
+                            console.log(`   -> IGUAIS ou VAZIO. Nenhuma atualização necessária.`);
+                        }
+
+                        // Check NCM
+                        const normalize = (s) => s ? s.replace(/\D/g, '') : '';
+                        if (normalize(item.ncm) !== normalize(stockItem.ncm) && item.ncm) {
+                            updatePayload.ncm = item.ncm;
+                            needsUpdate = true;
+                            console.log(`   -> DIFERENÇA NCM DETECTADA!`);
+                        }
+
+                        if (needsUpdate) {
+                            console.log(`[DEBUG] Enviando update para o DB (ID: ${stockItem.id})...`, updatePayload);
+                            // If we didn't have the UUID before, we can technically use the ID found via fallback
+                            // But updateItem requires the ID. stockItem.id is definitely the UUID.
+                            const updatePromise = updateItem(stockItem.id, updatePayload)
+                                .then(updatedItem => {
+                                    updateLocalItem(updatedItem); // Update local state immediately
+                                    console.log("[DEBUG] Sucesso! Local item state updated:", updatedItem.name);
+                                })
+                                .catch(err => {
+                                    console.error("[DEBUG] ERRO ao atualizar item:", err);
+                                });
+                            syncPromises.push(updatePromise);
+                        }
+                    } else {
+                        console.log(`[DEBUG] Ignorando item ${item.desc} (desc) - Não vinculado a estoque.`);
+                    }
+                });
+            });
+
+            if (syncPromises.length > 0) {
+                showNotification(`Sincronizando ${syncPromises.length} alterações com o cadastro de produtos...`, 'info');
+                await Promise.all(syncPromises);
+                showNotification(`${syncPromises.length} itens do estoque foram atualizados com as informações desta invoice.`, 'success');
+            }
+        }
+        // ----------------------------------------
+
         if (origin === 'purchase-orders') {
             // It's a Purchase Order, so we update the 'purchase_orders' table
             savedData = await updatePurchaseOrder(operationId, updatedOperationData);
@@ -518,6 +697,94 @@ function initialize() {
                     nfeData.notaFiscal.pesoLiquido += nfe.notaFiscal?.pesoLiquido || 0;
                     nfeData.notaFiscal.pesoBruto += nfe.notaFiscal?.pesoBruto || 0;
                 });
+
+                // --- SELF-HEALING ON LOAD ---
+                // Attempt to restore missing links (item_id/code) by cross-referencing nfeData
+                console.log("[DEBUG] Running Self-Healing Check on stored suppliers...");
+                invoiceData.suppliers.forEach(supp => {
+                    const suppCnpj = normalizeCnpj(supp.cnpj || '');
+
+                    // Find corresponding NFE group
+                    console.log(`[DEBUG] Looking for NFE match for Supplier CNPJ: "${suppCnpj}"`);
+                    let matchingNfe = operation.nfeData.find(nfe => {
+                        const nfeCnpj = nfe.fornecedor?.cnpj ? normalizeCnpj(nfe.fornecedor.cnpj) : '';
+                        return nfeCnpj === suppCnpj && suppCnpj !== '';
+                    });
+
+                    // Fallback: If no CNPJ match (or empty CNPJ), try to match by Item Name content
+                    if (!matchingNfe) {
+                        console.log("[DEBUG] CNPJ match failed. Trying to infer NFE group by item names...");
+                        matchingNfe = operation.nfeData.find(nfe => {
+                            if (!nfe.produtos) return false;
+                            // Check if any item in this NFE matches an item in the current Supplier list
+                            const matchFound = nfe.produtos.some(nfeProd =>
+                                supp.items.some(suppItem => {
+                                    const sDesc = (suppItem.desc || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                                    const nDesc = (nfeProd.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+                                    // LOG THE COMPARISON FOR THE FIRST FEW ITEMS TO SEE THE PROBLEM
+                                    // (Limit logs to avoid browser crash if lists are huge, but print conflicts)
+                                    if (suppItem.desc.includes('Vilma') && nfeProd.name.includes('Vilma')) {
+                                        console.log(`[COMPARE] S: "${sDesc}" | N: "${nDesc}" | EQ: ${sDesc === nDesc}`);
+                                    }
+
+                                    return sDesc === nDesc && sDesc.length > 0;
+                                })
+                            );
+                            if (matchFound) console.log(`[DEBUG] Inference SUCCESS for NFE owner: ${nfe.fornecedor?.nome}`);
+                            return matchFound;
+                        });
+
+                        if (matchingNfe) {
+                            console.log(`[DEBUG] -> INFERRED match via Item Name! Found NFE for: ${matchingNfe.fornecedor?.nome}`);
+                            // Self-heal the missing CNPJ in the supplier object
+                            if (!supp.cnpj && matchingNfe.fornecedor?.cnpj) {
+                                supp.cnpj = matchingNfe.fornecedor.cnpj;
+                                console.log(`[DEBUG] Backfilled missing CNPJ on supplier: ${supp.cnpj}`);
+                            }
+                        }
+                    }
+
+                    if (matchingNfe) {
+                        console.log(`[DEBUG] -> FOUND NFE for CNPJ ${suppCnpj}`);
+                    }
+
+                    if (matchingNfe && matchingNfe.produtos) {
+                        supp.items.forEach(item => {
+                            if (!item.item_id || !item.code) {
+                                // Link strategy: Name (desc) or exact price+quantity match?
+                                // Let's try explicit name match first
+                                let match = matchingNfe.produtos.find(p => p.name === item.desc);
+
+                                // Debug matching failure
+                                if (!match) {
+                                    console.log(`[DEBUG] No exact name match for "${item.desc}". Available in NFE:`, matchingNfe.produtos.map(p => p.name));
+                                    // Try relaxed match (trim, lowercase, normalize spaces)
+                                    match = matchingNfe.produtos.find(p => {
+                                        const pName = (p.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                                        const iDesc = (item.desc || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                                        return pName === iDesc;
+                                    });
+                                }
+
+                                // If name changed, try fallback: same quantity and same price (risky but better than nothing)
+                                // Only do this if specific enough? No, let's stick to name or code if we can found it.
+
+                                if (match) {
+                                    if (!item.item_id && match.item_id) {
+                                        item.item_id = match.item_id;
+                                        console.log(`[DEBUG] Healed item_id for "${item.desc}" -> ${item.item_id}`);
+                                    }
+                                    if (!item.code && match.code) {
+                                        item.code = match.code;
+                                        console.log(`[DEBUG] Healed code for "${item.desc}" -> ${item.code}`);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                });
+                // -----------------------------
             }
 
         } else if (operation.type === 'import' && operation.nfeData) {
@@ -548,19 +815,40 @@ function initialize() {
                 }
 
                 nfe.produtos.forEach(item => {
-                    const ncmFromXml = item.ncm;
-                    const matchedItemInStock = allItems.find(stockItem => {
-                        if (stockItem.ncm && ncmFromXml) {
-                            const normalizedStockNcm = stockItem.ncm.replace(/\D/g, '');
-                            const normalizedXmlNcm = ncmFromXml.replace(/\D/g, '');
-                            return normalizedStockNcm === normalizedXmlNcm;
-                        }
-                        return false;
-                    });
+                    let matchedItemInStock = null;
+
+                    // 1. TENTATIVA FORTE: Buscar pelo UUID (item_id)
+                    // Este ID é salvo durante a finalização da importação (js/operations.js)
+                    if (item.item_id) {
+                        matchedItemInStock = allItems.find(stockItem => stockItem.id === item.item_id);
+                        if (matchedItemInStock) console.log(`Item vinculado por UUID: ${item.name}`);
+                    }
+
+                    // 2. FALLBACK 1: Buscar por Código + Fornecedor (Método antigo)
+                    if (!matchedItemInStock && item.code && matchedSupplier) {
+                        matchedItemInStock = allItems.find(stockItem =>
+                            stockItem.code === item.code && stockItem.supplier_id === matchedSupplier.id
+                        );
+                        if (matchedItemInStock) console.log(`Item vinculado por Código+Fornecedor: ${item.name}`);
+                    }
+
+                    // 3. FALLBACK 2: Buscar por NCM (Menos preciso, usado apenas para metadados secundários se tudo falhar)
+                    if (!matchedItemInStock) {
+                        const ncmFromXml = item.ncm;
+                        matchedItemInStock = allItems.find(stockItem => {
+                            if (stockItem.ncm && ncmFromXml) {
+                                const normalizedStockNcm = stockItem.ncm.replace(/\D/g, '');
+                                const normalizedXmlNcm = ncmFromXml.replace(/\D/g, '');
+                                return normalizedStockNcm === normalizedXmlNcm;
+                            }
+                            return false;
+                        });
+                        if (matchedItemInStock) console.log(`Item vinculado por NCM (Fallback fraco): ${item.name}`);
+                    }
 
                     let nameEn = '';
                     if (matchedItemInStock) {
-                        nameEn = matchedItemInStock.nameEn || '';
+                        nameEn = matchedItemInStock.name_en || matchedItemInStock.nameEn || ''; // Support both snake_case (DB) and camelCase (legacy)
                     }
 
                     let umValue = 'CS'; // Default
@@ -574,6 +862,8 @@ function initialize() {
                     }
 
                     supplier.items.push({
+                        item_id: matchedItemInStock ? matchedItemInStock.id : null, // Persist for next edit/save
+                        code: item.code || '',
                         qty: item.quantity || 0,
                         ncm: item.ncm || '',
                         desc: item.name || '',
@@ -691,7 +981,7 @@ function initialize() {
 
     // --- Populate and add listeners to control panel inputs ---
     const ptaxRateInput = document.getElementById('ptaxRate');
-    const distributeValueInput = document.getElementById('distributeValue');
+    const distributeValueInput = document.getElementById('distributeValue'); // Restored
     const distributeTypeInput = document.getElementById('distributeType');
     const applyExchangeRateToggle = document.getElementById('applyExchangeRateToggle');
     const distributeValueToggle = document.getElementById('distributeValueToggle');

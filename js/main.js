@@ -11,6 +11,7 @@ import { initializeEventListeners } from './events.js';
 import { openSimulationModal, resumeSimulation } from './simulation.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
 import { exportBackup, restoreBackup } from './backup.js'; // Import Backup functionality
+import { migrateOperationsToUUIDs } from './migration.js'; // Import Migration functionality
 import { escapeHTML } from './utils/helpers.js';
 import { API_CONFIG } from './config.js'; // Import config
 
@@ -181,6 +182,27 @@ document.addEventListener('DOMContentLoaded', () => {
                         triggerRestoreBtn.disabled = false;
                         triggerRestoreBtn.textContent = "Selecionar Arquivo...";
                     }
+                }
+            );
+        });
+    }
+
+    const runMigrationBtn = document.getElementById('btn-run-migration');
+    if (runMigrationBtn) {
+        runMigrationBtn.addEventListener('click', async () => {
+            // Backup automático antes de rodar a migração
+            showNotification("Iniciando backup de segurança...", "info");
+            await exportBackup();
+
+            showConfirmModal(
+                "Iniciar Migração de UUIDs?",
+                "Isso irá atualizar todas as operações existentes para usar o novo vínculo seguro de itens. Um backup foi baixado automaticamente.\n\nDeseja continuar?",
+                async () => {
+                    runMigrationBtn.disabled = true;
+                    runMigrationBtn.textContent = "Migrando...";
+                    await migrateOperationsToUUIDs();
+                    runMigrationBtn.disabled = false;
+                    runMigrationBtn.textContent = "Rodar Migração (UUID)";
                 }
             );
         });

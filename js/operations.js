@@ -339,8 +339,8 @@ async function finalizarOperacaoDeImportacao(stagedNfeData, operationId) {
 
                 // 3. Cria o movimento de ENTRADA no DB
                 const inMovement = {
-                    user_id: currentUser.id, // <-- CORREÇÃO AQUI
-                    item_id: itemId,
+                    user_id: currentUser.id,
+                    item_id: itemId, // UUID PERSISTENTE
                     type: 'in',
                     quantity: prod.quantity,
                     price: prod.costPrice,
@@ -350,6 +350,10 @@ async function finalizarOperacaoDeImportacao(stagedNfeData, operationId) {
                 };
                 const newInMovement = await addMovement(inMovement);
                 movements.push(newInMovement);
+
+                // 3.1 ATUALIZAÇÃO CRÍTICA: Salvar o ID do item na operação em memória (stagedNfeData)
+                // Isso garante que quando regenerateDocument for chamado, ele tenha o ID.
+                prod.item_id = itemId; // <--- VÍNCULO FORTE ADICIONADO AQUI
 
                 // 4. Cria o movimento de SAÍDA no DB
                 const outMovement = {
