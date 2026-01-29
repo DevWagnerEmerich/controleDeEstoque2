@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,11 +10,12 @@
     <link rel="stylesheet" href="css/modal_styles.css?v=1.1">
     <link rel="stylesheet" href="css/generator.css?v=1.1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-    
+
     <!-- Supabase e Scripts de Sessão -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module" src="js/supabase.js"></script>
 </head>
+
 <body>
 
     <div class="container">
@@ -24,12 +26,15 @@
                     <i class="fas fa-arrow-left"></i>
                 </button>
                 <div class="action-buttons-group">
-                    <button id="save-changes-btn" class="btn btn-icon btn-icon-primary" title="Salvar Alterações"><i class="fas fa-save"></i></button>
-                    <button id="packing-list-btn" class="btn btn-icon btn-icon-secondary" title="Ver Packing List"><i class="fas fa-box-open"></i></button>
-                    <button id="print-invoice-btn" class="btn btn-icon btn-icon-success" title="Imprimir / Salvar PDF"><i class="fas fa-print"></i></button>
+                    <button id="save-changes-btn" class="btn btn-icon btn-icon-primary" title="Salvar Alterações"><i
+                            class="fas fa-save"></i></button>
+                    <button id="packing-list-btn" class="btn btn-icon btn-icon-secondary" title="Ver Packing List"><i
+                            class="fas fa-box-open"></i></button>
+                    <button id="print-invoice-btn" class="btn btn-icon btn-icon-success"
+                        title="Imprimir / Salvar PDF"><i class="fas fa-print"></i></button>
                 </div>
             </div>
-            
+
             <div class="panel-section">
                 <h3 class="panel-subtitle">Cotação USD</h3>
                 <div class="form-group-inline">
@@ -38,8 +43,8 @@
                         <div class="input-with-button">
                             <input type="number" id="ptaxRate" step="0.0001" class="form-input">
                             <label class="switch">
-                              <input type="checkbox" id="applyExchangeRateToggle">
-                              <span class="slider round"></span>
+                                <input type="checkbox" id="applyExchangeRateToggle">
+                                <span class="slider round"></span>
                             </label>
                         </div>
                     </div>
@@ -55,12 +60,14 @@
                     </div>
                     <div class="form-group">
                         <label for="costValue">Valor do Custo</label>
-                        <input type="number" id="costValue" step="0.01" class="form-input">
+                        <input type="text" id="costValue" class="form-input" placeholder="Ex: 1,528.55">
                     </div>
                 </div>
-                <button id="addCostBtn" class="btn btn-primary w-full mt-2"><i data-feather="plus" class="mr-2"></i>Adicionar Custo</button>
+                <button id="addCostBtn" class="btn btn-primary w-full mt-2"><i data-feather="plus"
+                        class="mr-2"></i>Adicionar Custo</button>
+                <div id="costsList" class="mt-4 space-y-2"></div>
             </div>
-            
+
             <div class="panel-section">
                 <h3 class="panel-subtitle">Ajuste de Preços</h3>
                 <div class="form-group-inline">
@@ -77,8 +84,8 @@
                     </div>
                 </div>
                 <label class="switch mt-2">
-                  <input type="checkbox" id="distributeValueToggle">
-                  <span class="slider round"></span>
+                    <input type="checkbox" id="distributeValueToggle">
+                    <span class="slider round"></span>
                 </label>
             </div>
 
@@ -101,10 +108,27 @@
         <div class="context-menu-item" data-action="align-right">Align Right</div>
     </div>
 
+    <div id="confirm-modal" class="modal-backdrop">
+        <div class="modal-content" style="max-width: 450px; text-align: center;">
+            <div class="modal-body" style="padding: 2rem;">
+                <i class="fas fa-exclamation-triangle"
+                    style="font-size: 48px; margin: 0 auto 1rem; color: #F97316; display: block;"></i>
+                <h3 id="confirm-modal-title" style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Tem a
+                    certeza?</h3>
+                <p id="confirm-modal-text" class="text-secondary">Esta ação não pode ser desfeita.</p>
+            </div>
+            <div class="modal-footer" style="background-color: var(--color-card); justify-content: center;">
+                <button id="confirm-modal-cancel-btn" type="button" class="btn btn-secondary">Cancelar</button>
+                <button id="confirm-modal-btn" type="button" class="btn btn-danger">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="notification-container"></div>
 
     <script type="module" src="js/invoice.js"></script>
     <script src="js/simulation_invoice_preview.js"></script>
 
 </body>
+
 </html>

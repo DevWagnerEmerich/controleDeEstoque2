@@ -363,7 +363,52 @@ function addCost() {
     costNameInput.value = '';
     costValueInput.value = '';
 
+    renderCostsList();
     updatePreview();
+}
+
+function removeCost(index) {
+    showConfirmModal(
+        'Remover Custo?',
+        'Tem certeza que deseja remover este custo adicional?',
+        () => {
+            invoiceData.costs.splice(index, 1);
+            renderCostsList();
+            updatePreview();
+        }
+    );
+}
+
+// Make available globally for inline onclick handlers
+window.removeCost = removeCost;
+
+function renderCostsList() {
+    const costsListContainer = document.getElementById('costsList');
+    if (!costsListContainer) return;
+
+    costsListContainer.innerHTML = '';
+
+    if (invoiceData.costs.length === 0) {
+        costsListContainer.innerHTML = '<p class="text-sm text-gray-500 italic text-center">Nenhum custo adicional.</p>';
+        return;
+    }
+
+    invoiceData.costs.forEach((cost, index) => {
+        const costItem = document.createElement('div');
+        costItem.className = 'cost-item-card'; // Will add css for this
+        costItem.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: #f9fafb; padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 0.375rem; margin-bottom: 0.5rem;';
+
+        costItem.innerHTML = `
+            <div style="flex-grow: 1; margin-right: 0.5rem;">
+                <div style="font-size: 0.875rem; font-weight: 500;">${escapeHTML(cost.desc)}</div>
+                <div style="font-size: 0.8rem; color: #6b7280;">R$ ${parseFloat(cost.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <button onclick="window.removeCost(${index})" style="color: #ef4444; background: none; border: none; cursor: pointer; padding: 4px;" title="Remover">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        `;
+        costsListContainer.appendChild(costItem);
+    });
 }
 
 function printInvoice() {
@@ -642,6 +687,7 @@ function initialize() {
     }
 
     updatePreview();
+    renderCostsList();
 
     // --- Populate and add listeners to control panel inputs ---
     const ptaxRateInput = document.getElementById('ptaxRate');
@@ -719,6 +765,18 @@ function initialize() {
     });
 
     document.getElementById('addCostBtn').addEventListener('click', addCost);
+
+    // Listener para remover custos
+    const previewContainer = document.getElementById('invoice-preview');
+    if (previewContainer) {
+        previewContainer.addEventListener('click', function (e) {
+            if (e.target.classList.contains('remove-cost-btn')) {
+                const index = parseInt(e.target.dataset.index);
+                removeCost(index);
+            }
+        });
+    }
+
     document.getElementById('save-changes-btn').addEventListener('click', saveChanges);
     document.getElementById('print-invoice-btn').addEventListener('click', printInvoice);
     document.getElementById('packing-list-btn').addEventListener('click', async () => {
@@ -743,6 +801,23 @@ function initialize() {
         } else {
             // Default back to the history view
             window.location.href = 'index.html#operations-history';
+            window.location.href = 'index.html#operations-history';
+        }
+    });
+
+    // --- MODAL LISTENERS ---
+    const confirmCancelBtn = document.getElementById('confirm-modal-cancel-btn');
+    if (confirmCancelBtn) {
+        confirmCancelBtn.addEventListener('click', () => {
+            closeModal('confirm-modal');
+        });
+    }
+
+    // Close modal on escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const openModals = document.querySelectorAll('.modal-backdrop.is-open');
+            openModals.forEach(modal => closeModal(modal.id));
         }
     });
 }
@@ -797,7 +872,9 @@ function initializeEditableFieldsInvoice() {
 
             let value = this.innerText;
 
+
             // --- VALIDATION FOR INVOICE DATE ---
+
             if (targetId === 'invoiceDate') {
                 const dateRegex = /^(\d{2})-(\d{2})-(\d{4})$/;
                 const match = value.match(dateRegex);
@@ -898,6 +975,49 @@ function initializeEditableFieldsInvoice() {
 
         field.addEventListener('blur', onBlur, { once: true });
     });
+}
+
+// --- MODAL FUNCTIONS (Copied/Adapted from ui.js) ---
+
+function openModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        document.body.classList.add('modal-is-open');
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        document.body.classList.remove('modal-is-open');
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function showConfirmModal(title, text, onConfirm) {
+    document.getElementById('confirm-modal-title').innerText = title;
+    document.getElementById('confirm-modal-text').innerText = text;
+
+    const confirmBtn = document.getElementById('confirm-modal-btn');
+    if (!confirmBtn) {
+        console.error("Confirm button not found!");
+        return;
+    }
+    // Remove old event listeners by cloning
+    const newConfirmBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+    newConfirmBtn.addEventListener('click', () => {
+        if (typeof onConfirm === 'function') {
+            onConfirm();
+        }
+        closeModal('confirm-modal');
+    });
+
+    openModal('confirm-modal');
 }
 
 document.addEventListener('DOMContentLoaded', initialize);

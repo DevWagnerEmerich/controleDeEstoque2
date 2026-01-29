@@ -1390,3 +1390,25 @@ body.modal-is-open {
         bottom: 1.25rem;
     }
 }
+
+/* Print Styles */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+}
+
+/* Remove Cost Button Style */
+.remove-cost-btn {
+    transition: color 0.2s ease;
+    padding: 0 5px;
+    font-size: 1.2em;
+    line-height: 1;
+}
+
+.remove-cost-btn:hover {
+    color: #b91c1c !important;
+    /* Darker red on hover */
+    transform: scale(1.2);
+    display: inline-block;
+}

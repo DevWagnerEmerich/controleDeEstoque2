@@ -2,11 +2,16 @@
 .container {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.5rem; /* Usar variável de espaçamento */
-    padding: 1.5rem; /* Adicionar padding ao container */
-    max-width: 1400px; /* Limitar largura máxima */
-    margin: 0 auto; /* Centralizar */
+    gap: 1.5rem;
+    /* Usar variável de espaçamento */
+    padding: 1.5rem;
+    /* Adicionar padding ao container */
+    max-width: 1400px;
+    /* Limitar largura máxima */
+    margin: 0 auto;
+    /* Centralizar */
 }
+
 .control-panel {
     background-color: var(--color-card);
     border-radius: var(--border-radius-lg);
@@ -16,14 +21,19 @@
     flex: 1;
     min-width: 450px;
     position: sticky;
-    top: 1.5rem; /* Ajustar para a nova variável de espaçamento */
-    max-height: calc(100vh - 3rem); /* Ajustar para a nova variável de espaçamento */
+    top: 1.5rem;
+    /* Ajustar para a nova variável de espaçamento */
+    max-height: calc(100vh - 3rem);
+    /* Ajustar para a nova variável de espaçamento */
     overflow-y: auto;
     align-self: flex-start;
-    display: flex; /* Adicionar display flex para organizar os panel-sections */
+    display: flex;
+    /* Adicionar display flex para organizar os panel-sections */
     flex-direction: column;
-    gap: 1.5rem; /* Espaçamento entre as seções do painel */
+    gap: 1.5rem;
+    /* Espaçamento entre as seções do painel */
 }
+
 .preview-container {
     background-color: var(--color-card);
     border-radius: var(--border-radius-lg);
@@ -34,6 +44,7 @@
     min-width: 850px;
     overflow-x: auto;
 }
+
 h2 {
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
@@ -49,9 +60,20 @@ h3 {
 }
 
 /* Estilos dos formulários internos */
-.form-group { margin-bottom: 1rem; }
-label { display: block; font-weight: 500; margin-bottom: 0.375rem; font-size: 0.875rem; color: var(--text-secondary); }
-input, textarea {
+.form-group {
+    margin-bottom: 1rem;
+}
+
+label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+input,
+textarea {
     width: 100%;
     padding: 0.625rem 0.75rem;
     border: 1px solid var(--border-color);
@@ -62,15 +84,36 @@ input, textarea {
     color: var(--text-primary);
     transition: all 0.2s ease;
 }
-input:focus, textarea:focus {
+
+input:focus,
+textarea:focus {
     outline: none;
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.3);
     background-color: var(--color-card);
 }
-.supplier-group, .item { border: 1px solid var(--border-color); padding: 1rem; border-radius: var(--border-radius-md); margin-bottom: 1rem; background-color: var(--color-background); }
-.item { background-color: var(--color-card); margin-left: 0; }
-.group-header, .item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+
+.supplier-group,
+.item {
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    border-radius: var(--border-radius-md);
+    margin-bottom: 1rem;
+    background-color: var(--color-background);
+}
+
+.item {
+    background-color: var(--color-card);
+    margin-left: 0;
+}
+
+.group-header,
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
 
 .action-buttons {
     margin-top: 1.5rem;
@@ -81,9 +124,27 @@ input:focus, textarea:focus {
     gap: 1rem;
 }
 
-.supplier-group, .item { border: 1px solid #e2e8f0; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; background-color: #f8fafc; }
-.item { background-color: #fff; margin-left: 0; }
-.group-header, .item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.supplier-group,
+.item {
+    border: 1px solid #e2e8f0;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    background-color: #f8fafc;
+}
+
+.item {
+    background-color: #fff;
+    margin-left: 0;
+}
+
+.group-header,
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
 
 .action-buttons {
     margin-top: 20px;
@@ -92,48 +153,128 @@ input:focus, textarea:focus {
 }
 
 /* Estilos da Pré-visualização da Fatura */
-#invoice-preview { font-family: 'Times New Roman', Times, serif; font-size: 12px; color: #000000; }
-#invoice-preview table { border-collapse: collapse; width: 100%; }
-#invoice-preview td { border: 1px solid #000000; padding: 2px 6px; vertical-align: middle; word-break: break-word; position: relative; }
-#invoice-preview .bold { font-weight: bold; }
-#invoice-preview .italic { font-style: italic; }
-#invoice-preview .text-center { text-align: center; }
-#invoice-preview .text-right { text-align: right; }
-#invoice-preview .logo-cell img { max-width: 80%; max-height: 80%; object-fit: contain; }
-#invoice-preview .header-bg { background-color: #F1F1F1; }
-#invoice-preview .no-border { border: none; }
-#invoice-preview .supplier-info-cell { padding: 6px; font-style: italic; }
+#invoice-preview {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12px;
+    color: #000000;
+}
+
+#invoice-preview table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+#invoice-preview td {
+    border: 1px solid #000000;
+    padding: 2px 6px;
+    vertical-align: middle;
+    word-break: break-word;
+    position: relative;
+}
+
+#invoice-preview .bold {
+    font-weight: bold;
+}
+
+#invoice-preview .italic {
+    font-style: italic;
+}
+
+#invoice-preview .text-center {
+    text-align: center;
+}
+
+#invoice-preview .text-right {
+    text-align: right;
+}
+
+#invoice-preview .logo-cell img {
+    max-width: 80%;
+    max-height: 80%;
+    object-fit: contain;
+}
+
+#invoice-preview .header-bg {
+    background-color: #F1F1F1;
+}
+
+#invoice-preview .no-border {
+    border: none;
+}
+
+#invoice-preview .supplier-info-cell {
+    padding: 6px;
+    font-style: italic;
+}
 
 @media screen and (max-width: 768px) {
     .container {
         flex-direction: column;
     }
-    .control-panel, .preview-container {
+
+    .control-panel,
+    .preview-container {
         min-width: 100%;
     }
+
     #invoice-preview {
         font-size: 14px;
     }
+
     #invoice-preview table {
         min-width: 800px;
     }
 }
 
 @media print {
-    @page { size: A4 portrait; margin: 1cm 0.5cm; }
-    body { padding: 0; margin: 0; background-color: #fff; }
-    .control-panel, .preview-container h2, .action-buttons, .container > h2 { display: none !important; }
-    .container { display: block !important; padding: 0 !important; gap: 0; }
-    .preview-container { width: 100%; padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: none !important; overflow: visible !important; }
-        #invoice-preview { break-inside: avoid; font-size: 9pt; }
+    @page {
+        size: A4 portrait;
+        margin: 1cm 0.5cm;
     }
-    
-    /* Estilo para campos editáveis */
-    .editable-field:hover {
-        background-color: var(--color-background); /* Um azul bem claro */
-        cursor: pointer;
-        outline: 1px dashed var(--border-color); /* Uma borda tracejada para indicar a área clicável */
+
+    body {
+        padding: 0;
+        margin: 0;
+        background-color: #fff;
     }
+
+    .control-panel,
+    .control-panel-sticky,
+    .preview-container h2,
+    .action-buttons,
+    .container>h2 {
+        display: none !important;
+    }
+
+    .container {
+        display: block !important;
+        padding: 0 !important;
+        gap: 0;
+    }
+
+    .preview-container {
+        width: 100%;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        overflow: visible !important;
+    }
+
+    #invoice-preview {
+        break-inside: avoid;
+        font-size: 9pt;
+    }
+}
+
+/* Estilo para campos editáveis */
+.editable-field:hover {
+    background-color: var(--color-background);
+    /* Um azul bem claro */
+    cursor: pointer;
+    outline: 1px dashed var(--border-color);
+    /* Uma borda tracejada para indicar a área clicável */
+}
 
 .panel-title {
     font-size: 1.25rem;
@@ -147,7 +288,8 @@ input:focus, textarea:focus {
     border-radius: var(--border-radius-lg);
     padding: 1.5rem;
     border: 1px solid var(--border-color);
-    flex: 1 1 calc(50% - 0.75rem); /* Permite 2 cards por linha com espaçamento */
+    flex: 1 1 calc(50% - 0.75rem);
+    /* Permite 2 cards por linha com espaçamento */
 }
 
 .panel-subtitle {
@@ -233,7 +375,8 @@ input:focus, textarea:focus {
 }
 
 .btn-icon-success:hover {
-    color: #22C55E; /* Green */
+    color: #22C55E;
+    /* Green */
 }
 
 
@@ -244,74 +387,76 @@ input:focus, textarea:focus {
 
 /* The switch - the box around the slider */
 .switch {
-  position: relative;
-  display: inline-block;
-  width: 60px;
-  height: 34px;
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
 }
 
 /* Hide default HTML checkbox */
 .switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
+    opacity: 0;
+    width: 0;
+    height: 0;
 }
 
 /* The slider */
 .slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--border-color);
-  -webkit-transition: .4s;
-  transition: .4s;
-  border-radius: 34px;
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color);
+    -webkit-transition: .4s;
+    transition: .4s;
+    border-radius: 34px;
 }
 
 .slider:before {
-  position: absolute;
-  content: "";
-  height: 26px;
-  width: 26px;
-  left: 4px;
-  bottom: 4px;
-  background-color: white;
-  -webkit-transition: .4s;
-  transition: .4s;
-  border-radius: 50%;
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    -webkit-transition: .4s;
+    transition: .4s;
+    border-radius: 50%;
 }
 
-input:checked + .slider {
-  background-color: var(--color-primary);
+input:checked+.slider {
+    background-color: var(--color-primary);
 }
 
-input:focus + .slider {
-  box-shadow: 0 0 1px var(--color-primary);
+input:focus+.slider {
+    box-shadow: 0 0 1px var(--color-primary);
 }
 
-input:checked + .slider:before {
-  -webkit-transform: translateX(26px);
-  -ms-transform: translateX(26px);
-  transform: translateX(26px);
+input:checked+.slider:before {
+    -webkit-transform: translateX(26px);
+    -ms-transform: translateX(26px);
+    transform: translateX(26px);
 }
 
 /* Rounded sliders */
 .slider.round {
-  border-radius: 34px;
+    border-radius: 34px;
 }
 
 .slider.round:before {
-  border-radius: 50%;
+    border-radius: 50%;
 }
 
 .control-panel-sticky {
-    flex: 0 0 250px; /* Não cresce, não encolhe, base de 250px */
+    flex: 0 0 250px;
+    /* Não cresce, não encolhe, base de 250px */
     position: sticky;
     top: 20px;
-    align-self: flex-start; /* Alinha ao topo do container */
+    align-self: flex-start;
+    /* Alinha ao topo do container */
     background-color: var(--color-card);
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-md);
@@ -338,5 +483,6 @@ input:checked + .slider:before {
 
 .panel-section-row .panel-section {
     flex: 1;
-    margin-bottom: 0; /* Remove a margem dupla, pois o gap do pai já cuida disso */
+    margin-bottom: 0;
+    /* Remove a margem dupla, pois o gap do pai já cuida disso */
 }
