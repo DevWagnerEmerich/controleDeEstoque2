@@ -584,17 +584,22 @@ body.modal-is-open {
 /* Icon inside search */
 .search-wrapper .feather {
     position: absolute;
-    left: 0.875rem;
+    left: 12px;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--text-secondary);
+    color: #9ca3af;
     pointer-events: none;
+    width: 20px;
+    height: 20px;
+    z-index: 10;
 }
 
 /* Input with padding for icon */
+.search-wrapper input,
 .search-wrapper .form-input {
-    padding-left: 3.5rem;
-    /* Aumentado para evitar sobreposição com o ícone */
+    padding-left: 40px !important;
+    height: 42px;
+    /* Ensure consistent height */
 }
 
 .filters-wrapper {
@@ -1115,54 +1120,157 @@ body.modal-is-open {
 
 /* Purchase Orders */
 .po-item-card {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    margin-bottom: 1rem;
-    background-color: var(--background-color);
+    background-color: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e5e7eb;
 }
 
-.po-item-info {
+.po-card-body {
     display: flex;
     flex-direction: column;
+    gap: 24px;
+}
+
+@media (min-width: 768px) {
+    .po-card-body {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+}
+
+.po-card-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.info-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #9ca3af;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
 }
 
 .po-item-id {
-    font-weight: 600;
-    font-size: 1.1rem;
-    margin-bottom: 0.25rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 0;
 }
 
-.po-item-date,
-.po-item-status {
+.po-item-date {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #6b7280;
     font-size: 0.9rem;
-    color: var(--text-secondary);
+    margin: 4px 0 12px 0;
+}
+
+.po-item-date i {
+    width: 16px;
+    height: 16px;
+}
+
+.po-item-status {
+    width: fit-content;
+}
+
+.po-card-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 250px;
+}
+
+.action-row {
+    display: flex;
+    gap: 12px;
+}
+
+.action-row .btn {
+    flex: 1;
+}
+
+.btn-outline {
+    background-color: #fff;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-outline:hover {
+    background-color: #f9fafb;
+    border-color: #d1d5db;
+}
+
+.btn-success {
+    background-color: #10b981;
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    width: 100%;
+}
+
+.btn-success:hover {
+    background-color: #059669;
+}
+
+.w-full {
+    width: 100%;
 }
 
 .status-pending {
-    background-color: #f59e0b;
-    color: white;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.8rem;
+    background-color: #fef3c7;
+    color: #d97706;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    /* Pill shape */
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid #fcd34d;
 }
 
 .status-ready {
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.8rem;
+    background-color: #dcfce7;
+    color: #16a34a;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid #86efac;
 }
 
 .po-item-actions {
     display: flex;
+    flex-wrap: wrap;
+    /* Allow buttons to wrap */
     gap: 0.5rem;
 }
 
 .po-button-group {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
 }
 
@@ -1383,7 +1491,7 @@ body.modal-is-open {
     bottom: 6rem;
 }
 
-.md\:bottom-5 {}
+
 
 @media (min-width: 768px) {
     .md\:bottom-5 {

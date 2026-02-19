@@ -134,37 +134,13 @@ export async function openItemModal(id = null) {
         };
 
         if (imageBase64) {
-            itemData.image = imageBase64; // Or image_url? Supabase usually handles specific field.
-            // Original used addItem(itemData).
+            itemData.image_url = imageBase64;
         }
 
         try {
             if (itemId) { // Editing
                 const updatedItem = await updateItem(itemId, itemData);
-                // updateLocalItem(updatedItem); // Does updateItem return data? Yes.
-                // Assuming actions.js imports updateItem which updates DB.
-                // WE MUST UPDATE LOCAL STATE because updateItem from database.js doesn't? 
-                // Wait, database.js Step 1173: updateLocalItem exists but is it called by updateItem?
-                // Step 1173: updateItem calls supabase.
-                // So we need to call updateLocalItem logic here if logic demands.
-                // original/ui.js line 365 calls updateLocalItem(updatedItem).
-                // I need to import updateLocalItem?
-                // I imported it in Step 1208.
-                updateItem(itemId, itemData).then(data => {
-                    // Force local update if not auto
-                    // But original code called updateLocalItem.
-                    // I will assume fullUpdate() refreshes from memory?
-                    // No, memory must be updated.
-                });
-
-                // My actions.js imports updateLocalItem? Yes (Step 1208).
-                // But wait, updateItem in database.js (Step 1173) returns 'data'.
-                // So:
-                const result = await updateItem(itemId, itemData);
-                // updateLocalItem is exported from database.js and imported in actions.js
-                // I'll assume result is the item.
-                // Actually updateItem returns data.
-                // I'll call fullUpdate() after.
+                updateLocalItem(updatedItem);
                 showNotification('Item atualizado com sucesso!', 'success');
             } else { // Creating
                 const currentUser = getCurrentUserProfile();
@@ -199,7 +175,7 @@ export function openItemDetailsModal(id) {
     const supplierName = supplier ? supplier.name : 'N/A';
 
     // Populate Details
-    document.getElementById('detail-image').src = item.image || PLACEHOLDER_IMAGE;
+    document.getElementById('detail-image').src = item.image_url || PLACEHOLDER_IMAGE;
     document.getElementById('detail-name').innerText = item.name;
     document.getElementById('detail-code').innerText = item.code || 'S/N';
     document.getElementById('detail-category').innerText = item.category || 'Geral';

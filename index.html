@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockControl Pro</title>
+    <title>Alibras - Controle de Estoque</title>
+    <link rel="icon" type="image/png" href="images/alibras-logo.png">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/feather-icons"></script>
@@ -21,8 +22,8 @@
         <div class="login-panel-left">
             <div class="login-card">
                 <div class="login-logo">
-                    <i data-feather="box"></i>
-                    <h1>StockControl Pro</h1>
+                    <img src="images/alibras-logo.png" alt="Alibras Logo" style="max-width: 150px; height: auto;">
+                    <h1>Alibras</h1>
                 </div>
                 <p class="text-secondary mb-6">Por favor, insira as suas credenciais.</p>
                 <form id="login-form">
@@ -48,8 +49,9 @@
             <div class="nav-container">
                 <div class="nav-left">
                     <div class="nav-logo">
-                        <i data-feather="box"></i>
-                        <span>StockControl Pro</span>
+                        <img src="images/alibras-logo.png" alt="Alibras Logo"
+                            style="height: 32px; width: 32px; margin-right: 8px; border-radius: 50%; object-fit: cover;">
+                        <span>Alibras</span>
                     </div>
                     <nav class="nav-links">
                         <a href="#" id="desktop-nav-dashboard" class="nav-link active"><span>Dashboard</span></a>
@@ -256,6 +258,7 @@
                 <button data-tab="overview" class="report-tab active">Visão Geral</button>
                 <button data-tab="products" class="report-tab">Produtos</button>
                 <button data-tab="history" class="report-tab">Histórico</button>
+                <button data-tab="fiscal" class="report-tab">Fiscal / Declaração</button>
             </div>
             <div class="modal-body">
                 <div id="tab-overview" class="report-tab-content active">
@@ -301,10 +304,36 @@
                 <div id="tab-history" class="report-tab-content">
                     <div class="report-controls">
                         <h3 class="report-card-title">Rastro de Movimentações</h3>
-                        <input type="date" id="daily-movements-date-picker" class="form-input"
-                            aria-label="Selecione uma data para o rastro">
+                        <div class="date-range-group" style="display: flex; gap: 10px; align-items: center;">
+                            <input type="date" id="report-start-date" class="form-input" aria-label="Data Inicial">
+                            <span>até</span>
+                            <input type="date" id="report-end-date" class="form-input" aria-label="Data Final">
+                        </div>
                     </div>
                     <div id="daily-movements-list" class="report-card"></div>
+                </div>
+                <div id="tab-fiscal" class="report-tab-content">
+                    <div class="report-controls">
+                        <h3 class="report-card-title">Relatório Fiscal Anual</h3>
+                        <select id="fiscal-year-filter" class="form-select" style="max-width: 150px;">
+                            <!-- Populated by JS -->
+                        </select>
+                        <select id="fiscal-supplier-filter" class="form-select"
+                            style="max-width: 250px; margin-left: 10px;">
+                            <option value="">Todos os Fornecedores</option>
+                            <!-- Populated by JS -->
+                        </select>
+                    </div>
+                    <div class="report-card" style="margin-bottom: 20px;">
+                        <h3 class="report-card-title">Gastos por Fornecedor (Anual)</h3>
+                        <div class="chart-container" style="height: 300px;">
+                            <canvas id="supplierSpendingChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="report-card">
+                        <h3 class="report-card-title">Histórico de Notas Fiscais</h3>
+                        <div id="fiscal-invoices-list"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -388,10 +417,7 @@
                     <div class="panel-footer">
                         <div id="sim-summary" class="summary-details"></div>
                         <div class="sim-actions">
-                            <button id="sim-preview-invoice-btn" class="btn btn-secondary btn-sm"><i
-                                    data-feather="eye"></i> Preview</button>
-                            <button id="sim-save-draft-btn" class="btn btn-secondary btn-sm"><i data-feather="save"></i>
-                                Rascunho</button>
+
                             <button id="sim-finalize-btn" class="btn btn-primary btn-sm"><i
                                     data-feather="check-circle"></i> Criar Ordem de Compra</button>
                         </div>

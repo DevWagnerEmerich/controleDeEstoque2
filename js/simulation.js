@@ -8,8 +8,7 @@ const AUTO_SAVE_KEY = 'stock_simulation_draft';
 let currentSimulation = {};
 
 function toggleSimulationActionButtons(enable) {
-    document.getElementById('sim-preview-invoice-btn').disabled = !enable;
-    document.getElementById('sim-save-draft-btn').disabled = !enable;
+
     document.getElementById('sim-finalize-btn').disabled = !enable;
 }
 
@@ -101,7 +100,7 @@ function renderSimulationSelectedItems() {
     currentSimulation.items.forEach(simItem => {
         const div = document.createElement('div');
         div.className = 'op-item-card selected';
-        
+
         div.innerHTML = `
             <div class="op-item-info">
                 <p class="op-item-name">${simItem.name}</p>
@@ -324,22 +323,20 @@ async function saveSimItem(event) {
     const newItemData = {
         user_id: currentUser.id,
         name: name,
-        nameEn: nameEn,
+        name_en: nameEn,
         code: code,
         ncm: ncm,
         description: description || `Item ${name} adicionado via simulação.`,
-        costPrice: costPrice,
-        salePrice: costPrice * 1.25,
-        supplierId: supplierId,
+        cost_price: costPrice,
+        sale_price: costPrice * 1.25,
+        supplier_id: supplierId,
         quantity: 0,
-        minQuantity: 0,
-        unitsPerPackage: unitsPerPackage,
-        packageType: unitsPerPackage > 1 ? 'caixa' : 'unidade',
-        unitMeasureValue: unitMeasureValue,
-        unitMeasureType: unitMeasureType,
-        image: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        min_quantity: 0,
+        units_per_package: unitsPerPackage,
+        package_type: unitsPerPackage > 1 ? 'caixa' : 'unidade',
+        unit_measure_value: unitMeasureValue,
+        unit_measure_type: unitMeasureType,
+        image_url: null
     };
 
     try {
@@ -370,48 +367,15 @@ export function resumeSimulation(simulationData) {
     toggleSimulationActionButtons(true);
 }
 
-export function previewSimulationAsInvoice() {
-    if (!currentSimulation || !currentSimulation.items || currentSimulation.items.length === 0) {
-        showNotification('Adicione itens à simulação antes de pré-visualizar o Invoice.', 'warning');
-        return;
-    }
 
-    // Save the current state to sessionStorage for a seamless return
-    sessionStorage.setItem('simulationReturnData', JSON.stringify(currentSimulation));
-
-    const dataForDocument = {
-        operation: {
-            id: currentSimulation.id,
-            date: new Date().toISOString(),
-            items: currentSimulation.items,
-            type: 'simulation_preview' // Tipo especial para preview
-        },
-        allSuppliers: suppliers // Passa todos os fornecedores para lookup
-    };
-
-    localStorage.setItem('currentDocument', JSON.stringify(dataForDocument));
-    window.open('gerenciador_invoice.html?origin=simulation', '_self');
-}
-
-export function saveSimulationAsDraft() {
-    if (currentSimulation.items.length === 0) {
-        showNotification('Adicione itens à simulação antes de salvar como rascunho.', 'warning');
-        return;
-    }
-
-    currentSimulation.status = 'pending';
-    pendingSimulations.push(currentSimulation);
-    // TODO: Salvar o rascunho da simulação no Supabase
-    // saveData();
-    clearAutoSave();
-    closeModal('simulation-modal');
-    showNotification(`Simulação ${currentSimulation.id} salva como rascunho.`, 'success');
-    toggleSimulationActionButtons(false);
-    // Opcional: abrir o histórico de operações para ver o rascunho
-    // openOperationsHistoryModal();
-}
 
 export async function createPurchaseOrder() {
+    // Check if we are in editing mode
+    if (currentSimulation.status === 'editing') {
+        await updateExistingPurchaseOrder();
+        return;
+    }
+
     if (!currentSimulation || !currentSimulation.items || currentSimulation.items.length === 0) {
         showNotification('Adicione itens à simulação antes de criar uma Ordem de Compra.', 'warning');
         return;
@@ -446,6 +410,70 @@ export async function createPurchaseOrder() {
     closeModal('simulation-modal');
     toggleSimulationActionButtons(false);
 }
+
+export function editPurchaseOrderInSimulation(purchaseOrder) {
+    currentSimulation = {
+        id: purchaseOrder.id,
+        items: purchaseOrder.items.map(item => ({
+            ...item,
+            operationQuantity: item.operationQuantity || item.quantity || 1, // Fallback
+            operationPrice: item.operationPrice || item.sale_price || item.cost_price || 0
+        })),
+        status: 'editing', // Custom status to indicate editing mode
+        originalPoId: purchaseOrder.id
+    };
+
+    document.getElementById('simulation-id').innerText = `Editando OC: ${currentSimulation.id}`;
+
+    // Change button text to indicate update
+    const finalizeBtn = document.getElementById('sim-finalize-btn');
+    finalizeBtn.innerText = 'Atualizar Ordem de Compra';
+    // REMOVED onclick assignment to avoid duplicate listeners
+
+    renderSimulationAvailableItems();
+    renderSimulationSelectedItems();
+    renderSimulationSummary();
+    openModal('simulation-modal');
+    toggleSimulationActionButtons(true);
+}
+
+async function updateExistingPurchaseOrder() {
+    if (!currentSimulation || !currentSimulation.items || currentSimulation.items.length === 0) {
+        showNotification('A simulação deve ter itens.', 'warning');
+        return;
+    }
+
+    const updatedPO = {
+        items: currentSimulation.items,
+        status: 'pending_xml', // Reset status or keep? Usually pending_xml if items changed.
+        suppliers: null // Force invoice.js to rebuild suppliers from items
+    };
+
+    try {
+        const { updatePurchaseOrder } = await import('./database.js'); // Lazy import to avoid cycle if any
+        const updatedPodb = await updatePurchaseOrder(currentSimulation.originalPoId, updatedPO);
+
+        // Update local state in pendingPurchaseOrders if needed (reference based?)
+        const poIndex = pendingPurchaseOrders.findIndex(p => p.id === currentSimulation.originalPoId);
+        if (poIndex >= 0) {
+            pendingPurchaseOrders[poIndex] = updatedPodb;
+            // trigger render?
+        }
+
+        showNotification(`Ordem de Compra ${currentSimulation.originalPoId} atualizada!`, 'success');
+        closeModal('simulation-modal');
+
+        // Reset button
+        // Reset button
+        const finalizeBtn = document.getElementById('sim-finalize-btn');
+        finalizeBtn.innerText = 'Gerar Ordem de Compra';
+        // REMOVED onclick assignment
+
+    } catch (error) {
+        showNotification(`Erro ao atualizar: ${error.message}`, 'danger');
+    }
+}
+
 
 export function finalizeSimulation() {
     // Esta função foi substituída pela createPurchaseOrder para implementar o novo fluxo de compra.

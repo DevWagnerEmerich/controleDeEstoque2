@@ -1,7 +1,7 @@
 import { openItemModal, openSuppliersModal, openUsersModal, closeModal, resetUserForm, previewImage, openModal, openOperationsHistoryModal, showConfirmModal, showNotification } from './ui.js';
 import { openOperationModal, saveManualOperation } from './operations.js';
-import { openSimulationModal, previewSimulationAsInvoice, saveSimulationAsDraft, createPurchaseOrder, openSimAddItemModal } from './simulation.js';
-import { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport } from './reports.js';
+import { openSimulationModal, createPurchaseOrder, openSimAddItemModal } from './simulation.js';
+import { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport, renderFiscalReport } from './reports.js';
 import { openPurchaseOrdersModal } from './purchase-orders.js';
 import { handleLogout, sendPasswordReset } from './auth.js';
 import { renderItems } from './ui.js';
@@ -106,8 +106,7 @@ export function initializeEventListeners() {
 
     // --- Simulation Modal ---
     addClickListener('sim-add-new-item-btn', openSimAddItemModal);
-    addClickListener('sim-preview-invoice-btn', previewSimulationAsInvoice);
-    addClickListener('sim-save-draft-btn', saveSimulationAsDraft);
+
     addClickListener('sim-finalize-btn', createPurchaseOrder);
     addChangeListener('sim-select-all-chk', (event) => {
         if (event.target.checked) {
@@ -150,7 +149,10 @@ export function initializeEventListeners() {
         }
     });
     addChangeListener('reports-period-filter', renderProductAnalysisReports);
-    addChangeListener('daily-movements-date-picker', renderDailyMovementsReport);
+    addChangeListener('report-start-date', renderDailyMovementsReport);
+    addChangeListener('report-end-date', renderDailyMovementsReport);
+    addChangeListener('fiscal-year-filter', renderFiscalReport);
+    addChangeListener('fiscal-supplier-filter', renderFiscalReport);
 
     // --- Manual Operation Modal ---
     addClickListener('save-operation-btn', saveManualOperation);

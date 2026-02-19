@@ -1,6 +1,6 @@
 {
-  "name": "StockControl Pro",
-  "short_name": "StockPro",
+  "name": "Alibras - Controle de Estoque",
+  "short_name": "Alibras",
   "description": "Um aplicativo moderno para controle de estoque.",
   "start_url": "/index.html",
   "display": "standalone",

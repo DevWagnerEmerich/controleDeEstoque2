@@ -10,7 +10,7 @@ export function openPurchaseOrdersModal() {
 
 function renderPurchaseOrders() {
     const container = document.getElementById('purchase-orders-list-container');
-    
+
     let pendingOrders = pendingPurchaseOrders.filter(op => op.status !== 'completed');
 
     // Sort by date in descending order (newest first)
@@ -30,6 +30,7 @@ function renderPurchaseOrders() {
             actionButton = `
                 <div class="po-button-group">
                     <button class="btn btn-secondary btn-sm" onclick="window.viewPurchaseOrder('${order.id}')">Visualizar/Editar</button>
+                    <button class="btn btn-secondary btn-sm" onclick="window.reviewSimulation('${order.id}')">Revisar Simulação</button>
                     <button class="btn btn-secondary btn-sm" onclick="window.attachXml('${order.id}')">Anexar XML</button>
                     <button class="btn btn-success btn-sm" onclick="window.finalizeAttachments('${order.id}')">Finalizar Anexos</button>
                 </div>
@@ -41,16 +42,30 @@ function renderPurchaseOrders() {
 
         return `
         <div class="po-item-card">
-            <div class="po-item-info">
-                <p class="po-item-id">ID: ${order.id}</p>
-                <p class="po-item-date">Data: ${new Date(order.date).toLocaleDateString('pt-BR')}</p>
-                <p class="po-item-status">Status: ${statusBadge}</p>
-            </div>
-            <div class="po-item-actions">
-                ${actionButton}
+            <div class="po-card-body">
+                <div class="po-card-info">
+                    <span class="info-label">IDENTIFICAÇÃO</span>
+                    <h3 class="po-item-id">${order.id}</h3>
+                    <p class="po-item-date"><i data-feather="calendar"></i> Data: ${new Date(order.date).toLocaleDateString('pt-BR')}</p>
+                    <div class="po-item-status">${statusBadge}</div>
+                </div>
+                <div class="po-card-actions">
+                     ${order.status === 'pending_xml' ? `
+                        <button class="btn btn-outline w-full" onclick="window.viewPurchaseOrder('${order.id}')"><i data-feather="eye"></i> Visualizar/Editar</button>
+                        <div class="action-row">
+                            <button class="btn btn-outline" onclick="window.reviewSimulation('${order.id}')"><i data-feather="edit-2"></i> Revisar</button>
+                            <button class="btn btn-outline" onclick="window.attachXml('${order.id}')"><i data-feather="file-text"></i> XML</button>
+                        </div>
+                        <button class="btn btn-success w-full" onclick="window.finalizeAttachments('${order.id}')"><i data-feather="check-circle"></i> Finalizar Anexos</button>
+                     ` : ''}
+                     ${order.status === 'pending_stock_entry' ? `
+                        <button class="btn btn-primary w-full" onclick="window.stockIn('${order.id}')"><i data-feather="package"></i> Dar Entrada no Estoque</button>
+                     ` : ''}
+                </div>
             </div>
         </div>
     `}).join('');
+    feather.replace(); // Ensure icons are rendered
 }
 
 window.attachXml = (orderId) => {
@@ -149,7 +164,7 @@ window.viewPurchaseOrder = (orderId) => {
 
     const documentData = {
         operation: order,
-        allSuppliers: suppliers 
+        allSuppliers: suppliers
     };
 
     localStorage.setItem('currentDocument', JSON.stringify(documentData));
@@ -162,3 +177,15 @@ document.addEventListener('DOMContentLoaded', () => {
         poXmlUpload.addEventListener('change', handlePoXmlUpload);
     }
 });
+
+window.reviewSimulation = async (orderId) => {
+    const order = pendingPurchaseOrders.find(op => op.id === orderId);
+    if (!order) {
+        showNotification("Ordem de compra não encontrada.", "danger");
+        return;
+    }
+
+    // Import dynamically to avoid strict circular dependency issues during load
+    const { editPurchaseOrderInSimulation } = await import('./simulation.js');
+    editPurchaseOrderInSimulation(order);
+};

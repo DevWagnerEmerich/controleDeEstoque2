@@ -30,11 +30,30 @@ function switchReportTab(button, tabName) {
     } else if (tabName === 'products') {
         renderProductAnalysisReports();
     } else if (tabName === 'history') {
-        const datePicker = document.getElementById('daily-movements-date-picker');
-        if (!datePicker.value) {
-            datePicker.value = new Date().toISOString().split('T')[0];
+        const startDatePicker = document.getElementById('report-start-date');
+        const endDatePicker = document.getElementById('report-end-date');
+
+        if (!startDatePicker.value || !endDatePicker.value) {
+            const today = new Date();
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+
+            startDatePicker.value = firstDay.toISOString().split('T')[0];
+            endDatePicker.value = today.toISOString().split('T')[0];
         }
         renderDailyMovementsReport();
+    } else if (tabName === 'fiscal') {
+        const yearSelect = document.getElementById('fiscal-year-filter');
+        if (yearSelect.options.length === 0) {
+            const currentYear = new Date().getFullYear();
+            for (let i = 0; i < 5; i++) {
+                const year = currentYear - i;
+                const option = document.createElement('option');
+                option.value = year;
+                option.text = year;
+                yearSelect.add(option);
+            }
+        }
+        renderFiscalReport();
     }
 }
 
@@ -162,25 +181,27 @@ function renderRankingList(containerId, data, label, formatter) {
 
 function renderDailyMovementsReport() {
     const container = document.getElementById('daily-movements-list');
-    const datePicker = document.getElementById('daily-movements-date-picker');
-    const selectedDate = new Date(datePicker.value + 'T00:00:00');
+    const startDateVal = document.getElementById('report-start-date').value;
+    const endDateVal = document.getElementById('report-end-date').value;
+
+    if (!startDateVal || !endDateVal) return;
+
+    const startDate = new Date(startDateVal + 'T00:00:00');
+    const endDate = new Date(endDateVal + 'T23:59:59.999');
 
     container.innerHTML = '';
-
-    const startOfDay = new Date(selectedDate.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(selectedDate.setHours(23, 59, 59, 999));
 
     const filteredMovements = movements
         .filter(mov => {
             const movDate = new Date(mov.date);
-            return movDate >= startOfDay && movDate <= endOfDay;
+            return movDate >= startDate && movDate <= endDate;
         })
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     if (filteredMovements.length === 0) {
         container.innerHTML = `<div class="panel-empty-state">
             <i data-feather="calendar"></i>
-            <p>Nenhuma movimentação para esta data.</p>
+            <p>Nenhuma movimentação para este período.</p>
         </div>`;
         feather.replace();
         return;
@@ -201,7 +222,7 @@ function renderDailyMovementsReport() {
             <div class="movement-details">
                 <div class="movement-header">
                     <span class="movement-name">${item ? escapeHTML(item.name) : 'Item Excluído'}</span>
-                    <span class="movement-time">${new Date(mov.date).toLocaleTimeString('pt-BR')}</span>
+                    <span class="movement-time">${new Date(mov.date).toLocaleDateString('pt-BR')} ${new Date(mov.date).toLocaleTimeString('pt-BR')}</span>
                 </div>
                 <p class="movement-reason">${escapeHTML(mov.reason || 'N/A')}</p>
                 <div class="movement-stats">
@@ -216,5 +237,172 @@ function renderDailyMovementsReport() {
     });
     feather.replace();
 }
+function renderFiscalReport() {
+    if (charts.supplierSpendingChart) charts.supplierSpendingChart.destroy();
 
-export { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport };
+    const selectedYear = parseInt(document.getElementById('fiscal-year-filter').value);
+    const selectedSupplierFilter = document.getElementById('fiscal-supplier-filter').value;
+    const container = document.getElementById('fiscal-invoices-list');
+    container.innerHTML = '';
+
+    const allInvoicesForYear = [];
+    const availableSuppliers = new Set();
+
+    // 1. First Pass: Collect all relevant movements for the year to build full dataset and supplier list
+    movements.forEach(mov => {
+        if (mov.type !== 'in') return;
+        const movDate = new Date(mov.date);
+        if (movDate.getFullYear() !== selectedYear) return;
+
+        const nfMatch = (mov.reason || '').match(/(?:NF-e|Nota Fiscal|NF):?\s*(\d+)/i);
+        if (!nfMatch) return;
+
+        const nfNumber = nfMatch[1];
+        const itemId = mov.itemId || mov.item_id;
+        const item = items.find(i => i.id == itemId);
+        const supplierId = item ? (item.supplierId || item.supplier_id) : 'unknown';
+        const supplier = suppliers.find(s => s.id == supplierId);
+        const supplierName = supplier ? supplier.name : 'Fornecedor Desconhecido';
+
+        if (supplierName !== 'Fornecedor Desconhecido') {
+            availableSuppliers.add(supplierName);
+        }
+
+        allInvoicesForYear.push({
+            nfNumber,
+            supplierName,
+            supplierId,
+            date: mov.date,
+            totalValue: mov.quantity * mov.price
+        });
+    });
+
+    // 2. Populate Supplier Filter (if necessary)
+    // We strictly should only update if the year changed, but checking "if options match availableSuppliers" is safer.
+    // Simplest approach: Clear and rebuild, adhering to current selection.
+    const supplierFilter = document.getElementById('fiscal-supplier-filter');
+    const previousSelection = supplierFilter.value;
+
+    // Sort suppliers alphabetically
+    const sortedAvailableSuppliers = Array.from(availableSuppliers).sort();
+
+    // Only rebuild if the list is different (optimization) or just rebuild always for safety on year change.
+    // Let's rebuild always to ensure correctness for the selected year.
+    supplierFilter.innerHTML = '<option value="">Todos os Fornecedores</option>';
+    sortedAvailableSuppliers.forEach(supName => {
+        const option = document.createElement('option');
+        option.value = supName;
+        option.textContent = supName;
+        supplierFilter.appendChild(option);
+    });
+
+    // Restore selection if it's still valid
+    if (previousSelection && sortedAvailableSuppliers.includes(previousSelection)) {
+        supplierFilter.value = previousSelection;
+    } else {
+        supplierFilter.value = ""; // Reset to all if selected supplier is not in this year
+    }
+
+    // 3. Process Data for Display (Filtering)
+    const filteredInvoicesMap = {};
+    const supplierSpending = {};
+    const currentFilter = supplierFilter.value; // Use the actual value after update
+
+    allInvoicesForYear.forEach(invoice => {
+        if (currentFilter && invoice.supplierName !== currentFilter) return;
+
+        const key = `${invoice.nfNumber}_${invoice.supplierId}`;
+        if (!filteredInvoicesMap[key]) {
+            filteredInvoicesMap[key] = {
+                number: invoice.nfNumber,
+                supplier: invoice.supplierName,
+                date: invoice.date,
+                total: 0
+            };
+        }
+        filteredInvoicesMap[key].total += invoice.totalValue;
+
+        supplierSpending[invoice.supplierName] = (supplierSpending[invoice.supplierName] || 0) + invoice.totalValue;
+    });
+
+    const sortedInvoices = Object.values(filteredInvoicesMap).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    if (sortedInvoices.length === 0) {
+        container.innerHTML = `<div class="panel-empty-state">
+            <i data-feather="file-text"></i>
+            <p>Nenhuma nota fiscal encontrada para ${selectedYear}${currentFilter ? ' com este fornecedor' : ''}.</p>
+        </div>`;
+    } else {
+        const table = document.createElement('table');
+        table.className = 'w-full text-left border-collapse';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th class="p-3 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">Data</th>
+                    <th class="p-3 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">Nota Fiscal</th>
+                    <th class="p-3 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">Fornecedor</th>
+                    <th class="p-3 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Valor Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${sortedInvoices.map(inv => `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="p-3 border-b border-gray-200 text-sm text-gray-700">${new Date(inv.date).toLocaleDateString('pt-BR')}</td>
+                        <td class="p-3 border-b border-gray-200 text-sm font-medium text-gray-900">${inv.number}</td>
+                        <td class="p-3 border-b border-gray-200 text-sm text-gray-700">${inv.supplier}</td>
+                        <td class="p-3 border-b border-gray-200 text-sm font-bold text-gray-900 text-right">${formatCurrency(inv.total, 'BRL')}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        `;
+        container.appendChild(table);
+    }
+    feather.replace();
+
+    // Render Chart
+    const chartCtx = document.getElementById('supplierSpendingChart').getContext('2d');
+    const sortedSuppliers = Object.entries(supplierSpending).sort(([, a], [, b]) => b - a); // Top spenders first
+
+    charts.supplierSpendingChart = new Chart(chartCtx, {
+        type: 'bar',
+        data: {
+            labels: sortedSuppliers.map(([name]) => name),
+            datasets: [{
+                label: 'Total Gasto (R$)',
+                data: sortedSuppliers.map(([, value]) => value),
+                backgroundColor: '#3B82F6',
+                borderColor: '#2563EB',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function (value) {
+                            return 'R$ ' + value; // Simple currency format
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            let label = context.dataset.label || '';
+                            if (context.parsed.y !== null) {
+                                label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+export { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport, renderFiscalReport };
