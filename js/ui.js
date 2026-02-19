@@ -427,7 +427,29 @@ async function deleteItem(id) {
     );
 }
 
-async function openSuppliersModal() {
+export function refreshSupplierDropdowns(selectedSupplierId = null) {
+    const dropdowns = ['itemSupplier', 'simItemSupplier'];
+    dropdowns.forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+            const currentValue = select.value;
+            select.innerHTML = `<option value="">Sem fornecedor</option>`;
+            suppliers.forEach(s => {
+                select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+            });
+            // Select the new supplier if provided, otherwise keep previous selection
+            if (selectedSupplierId) {
+                select.value = selectedSupplierId;
+            } else {
+                select.value = currentValue;
+            }
+        }
+    });
+}
+
+window.refreshSupplierDropdowns = refreshSupplierDropdowns;
+
+async function openSuppliersModal(onSuccessCallback = null) {
     renderSuppliersList();
     resetSupplierForm();
 
@@ -448,6 +470,12 @@ async function openSuppliersModal() {
             return;
         }
 
+        const currentUser = getCurrentUserProfile();
+        if (!currentUser) {
+            showNotification('Erro: Sessão inválida. Por favor, faça login novamente.', 'danger');
+            return;
+        }
+
         const supplierData = {
             name,
             cnpj: document.getElementById('supplierCnpj').value.replace(/\D/g, ''),
@@ -455,21 +483,28 @@ async function openSuppliersModal() {
             fda: document.getElementById('supplierFda').value,
             email: document.getElementById('supplierEmail').value,
             salesperson: document.getElementById('supplierSalesperson').value,
-            phone: document.getElementById('supplierPhone').value.replace(/\D/g, '')
+            phone: document.getElementById('supplierPhone').value.replace(/\D/g, ''),
+            user_id: currentUser.id
         };
 
         try {
+            let resultSupplier;
             if (id) { // Editando
-                const updatedSupplier = await updateSupplier(id, supplierData);
-                updateLocalSupplier(updatedSupplier);
+                resultSupplier = await updateSupplier(id, supplierData);
+                updateLocalSupplier(resultSupplier);
                 showNotification('Fornecedor atualizado com sucesso!', 'success');
             } else { // Criando
-                const newSupplier = await addSupplier(supplierData);
-                addLocalSupplier(newSupplier);
+                resultSupplier = await addSupplier(supplierData);
+                addLocalSupplier(resultSupplier);
                 showNotification('Fornecedor adicionado com sucesso!', 'success');
             }
             renderSuppliersList();
             resetSupplierForm();
+
+            if (onSuccessCallback && typeof onSuccessCallback === 'function' && resultSupplier) {
+                onSuccessCallback(resultSupplier.id);
+                closeModal('suppliers-modal');
+            }
         } catch (error) {
             showNotification(`Erro ao salvar fornecedor: ${error.message}`, 'danger');
         }

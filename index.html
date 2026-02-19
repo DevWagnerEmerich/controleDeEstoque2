@@ -601,8 +601,16 @@
                             <option value="ml">ml</option>
                             <option value="l">L</option>
                         </select></div>
-                    <div style="grid-column: 1 / -1;"><label for="itemSupplier">Fornecedor</label><select
-                            id="itemSupplier" class="form-select"></select></div>
+                    <div style="grid-column: 1 / -1;">
+                        <label for="itemSupplier">Fornecedor</label>
+                        <div style="display: flex; gap: 8px;">
+                            <select id="itemSupplier" class="form-select" style="flex-grow: 1;"></select>
+                            <button type="button" id="btn-add-supplier-item-modal" class="btn btn-secondary"
+                                title="Adicionar Novo Fornecedor">
+                                <i data-feather="plus"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -645,8 +653,16 @@
                         <option value="l">L</option>
                     </select>
                 </div>
-                <div style="grid-column: 1 / -1;"><label for="simItemSupplier">Fornecedor</label><select
-                        id="simItemSupplier" class="form-select"></select></div>
+                <div style="grid-column: 1 / -1;">
+                    <label for="simItemSupplier">Fornecedor</label>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="simItemSupplier" class="form-select" style="flex-grow: 1;"></select>
+                        <button type="button" id="btn-add-supplier-sim-modal" class="btn btn-secondary"
+                            title="Adicionar Novo Fornecedor">
+                            <i data-feather="plus"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary closeModalBtn">Cancelar</button>

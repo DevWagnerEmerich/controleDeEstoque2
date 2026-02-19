@@ -1,4 +1,4 @@
-import { openItemModal, openSuppliersModal, openUsersModal, closeModal, resetUserForm, previewImage, openModal, openOperationsHistoryModal, showConfirmModal, showNotification } from './ui.js';
+import { openItemModal, openSuppliersModal, openUsersModal, closeModal, resetUserForm, previewImage, openModal, openOperationsHistoryModal, showConfirmModal, showNotification, refreshSupplierDropdowns } from './ui.js';
 import { openOperationModal, saveManualOperation } from './operations.js';
 import { openSimulationModal, createPurchaseOrder, openSimAddItemModal } from './simulation.js';
 import { openReportsModal, switchReportTab, renderProductAnalysisReports, renderDailyMovementsReport, renderFiscalReport } from './reports.js';
@@ -44,6 +44,15 @@ export function initializeEventListeners() {
     addClickListener('desktop-logout-btn', handleLogout);
     addClickListener('desktop-reports-btn', openReportsModal);
     addClickListener('desktop-nav-purchase-orders', openPurchaseOrdersModal);
+
+    // --- New Supplier Buttons from Item Modals ---
+    const handleNewSupplier = () => {
+        openSuppliersModal((newSupplierId) => {
+            refreshSupplierDropdowns(newSupplierId);
+        });
+    };
+    addClickListener('btn-add-supplier-item-modal', handleNewSupplier);
+    addClickListener('btn-add-supplier-sim-modal', handleNewSupplier);
 
     // --- Operations Hub & Dropdown ---
     // Mobile: Still uses the modal
